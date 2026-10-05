@@ -1,0 +1,167 @@
+---
+import "../styles/global.css";
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel Wavetrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="app" data-view="panel">
+  <div id="scene" class="scene"></div>
+
+  <div id="panels">
+  <aside class="sidebar" id="sidebar" aria-label="Menú principal">
+    <div class="sidebar__head">
+      <svg class="sidebar__logo" width="34" height="28" viewBox="0 0 34 28" fill="none"><path d="M3 8c3 9 8 14 14 14S28 17 31 8" stroke="#2457e6" stroke-width="4" stroke-linecap="round"></path><path d="M9 6c2 6 5 9 8 9s6-3 8-9" stroke="#2457e6" stroke-width="4" stroke-linecap="round" opacity=".55"></path></svg>
+      <div class="brand__name">Wavetrack</div>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav__item is-active" data-view="panel" title="Panel" aria-current="page"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="16" width="7" height="5" rx="1.5"></rect></svg><span class="nav__label">Panel</span></button>
+      <button class="nav__item" data-view="envios" title="Envíos"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 5v10l-9 5-9-5V7z"></path><path d="M3 7l9 5 9-5M12 12v10"></path></svg><span class="nav__label">Envíos</span></button>
+      <button class="nav__item" data-view="flota" title="Flota"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h12v10H2zM14 9h4l3 3.5V16h-7z"></path><circle cx="6" cy="17.5" r="1.8"></circle><circle cx="17" cy="17.5" r="1.8"></circle></svg><span class="nav__label">Flota</span></button>
+      <button class="nav__item" data-view="almacen" title="Almacén"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l9-5 9 5v12"></path><path d="M7 21v-8h10v8M7 17h10"></path></svg><span class="nav__label">Almacén</span></button>
+      <button class="nav__item" data-view="rutas" title="Rutas"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="6" r="2.5"></circle><path d="M8.5 18H15a3 3 0 000-6H9a3 3 0 010-6h6.5"></path></svg><span class="nav__label">Rutas</span></button>
+      <button class="nav__item" data-view="reportes" title="Reportes"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"></path><path d="M8 16v-4M12 16V8M16 16v-6"></path></svg><span class="nav__label">Reportes</span></button>
+      <button class="nav__item" data-view="costos" title="Costos"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M15 9.2c-.5-1-1.6-1.6-3-1.6-1.8 0-3 .9-3 2.2 0 3 6 1.5 6 4.4 0 1.300-1.200 2.200-3 2.200-1.500 0-2.700-.700-3.200-1.800M12 5.800v1.800M12 16.400v1.800"></path></svg><span class="nav__label">Costos</span></button>
+      <button class="nav__item" data-view="alertas" title="Alertas"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21a2 2 0 004 0"></path></svg><span class="nav__label">Alertas</span><span class="nav__badge" id="nav-badge">3</span></button>
+    </nav>
+    <div class="nav nav--foot">
+      <button class="nav__item" data-view="ajustes" title="Configuración"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg><span class="nav__label">Configuración</span></button>
+      <button class="nav__item" id="sidebar-toggle" title="Contraer menú" aria-expanded="true" aria-controls="sidebar"><svg class="nav__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg><span class="nav__label">Contraer menú</span></button>
+    </div>
+  </aside>
+
+  <header class="topbar">
+    <div class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f1b33" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <input id="search" placeholder="Buscar pedido, licencia, cliente, producto o envío..." aria-label="Buscar">
+    </div>
+    <div class="spacer"></div>
+    <div class="live"><span class="live__dot"></span>En vivo</div>
+    <div class="chip">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f1b33" stroke-width="2" stroke-linecap="round"><path d="M12 22s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
+      <div class="chip__text">
+        <div class="chip__title">Monterrey, México</div>
+        <div class="chip__sub" id="clock"></div>
+      </div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b778c" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+    </div>
+    <div class="online"><span class="online__dot"></span>Sistema en línea</div>
+    <button class="bell" id="bell" title="Alertas">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f1b33" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21a2 2 0 004 0"></path></svg>
+      <span class="bell__count" id="bell-count">3</span>
+    </button>
+    <div class="chip chip--user">
+      <div class="avatar">AC</div>
+      <div class="chip__text">
+        <div class="chip__title chip__title--lg">Alex Chen</div>
+        <div class="chip__sub">Gerente de Operaciones</div>
+      </div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0f1b33" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"></path></svg>
+    </div>
+  </header>
+
+  <div class="kpis">
+    <div class="kpi" style="width:216px">
+      <div class="kpi__icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="#2457e6"><path d="M2 6h12v10H2z"></path><path d="M14 9h4l3 3.5V16h-7z"></path><circle cx="6" cy="17.5" r="2" fill="#fff" stroke="#2457e6" stroke-width="1.6"></circle><circle cx="17" cy="17.5" r="2" fill="#fff" stroke="#2457e6" stroke-width="1.6"></circle></svg></div>
+      <div class="kpi__body">
+        <div class="kpi__label">Envíos totales</div>
+        <div class="kpi__row"><span class="kpi__value" id="k1">0</span><span class="kpi__delta">↑ 12%</span></div>
+        <div class="kpi__sub">vs. últimos 7 días</div>
+      </div>
+    </div>
+    <div class="kpi" style="width:230px">
+      <div class="kpi__icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="#2457e6"><path d="M12 2l9 5v10l-9 5-9-5V7z"></path><path d="M3 7l9 5 9-5M12 12v10" stroke="#fff" stroke-width="1.6" fill="none"></path></svg></div>
+      <div class="kpi__body">
+        <div class="kpi__label">Entregas a tiempo</div>
+        <div class="kpi__row"><span class="kpi__value" id="k2">0.0%</span><span class="kpi__delta">↑ 4.7%</span></div>
+        <div class="kpi__sub">vs. últimos 7 días</div>
+      </div>
+    </div>
+    <div class="kpi" style="width:236px">
+      <div class="kpi__icon"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#2457e6"></circle><path d="M12 6.5V12l3.5 2.5" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"></path></svg></div>
+      <div class="kpi__body">
+        <div class="kpi__label">Tiempo de proceso</div>
+        <div class="kpi__row"><span class="kpi__value" id="k3">0.0 h</span><span class="kpi__delta">↓ 18%</span></div>
+        <div class="kpi__sub">vs. últimos 7 días</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mapctl">
+    <div class="mapctl__btns">
+      <button id="zoom-in" title="Acercar">+</button>
+      <div class="mapctl__sep"></div>
+      <button id="zoom-out" title="Alejar">−</button>
+      <div class="mapctl__sep"></div>
+      <button id="recenter" title="Centrar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2457e6" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg></button>
+    </div>
+    <div class="mapctl__hint">Arrastra para explorar · Rueda para zoom · Clic en un vehículo</div>
+  </div>
+
+  <section class="panel shipment">
+    <div class="shipment__head">
+      <svg width="32" height="24" viewBox="0 0 24 18" fill="#2457e6"><path d="M1 2h13v11H1z"></path><path d="M14 5h5l4 4v4h-9z"></path><circle cx="5" cy="15" r="2.2" fill="#fff" stroke="#2457e6" stroke-width="1.6"></circle><circle cx="18" cy="15" r="2.2" fill="#fff" stroke="#2457e6" stroke-width="1.6"></circle></svg>
+      <div class="panel__title shipment__title" id="sel-title"></div>
+      <div class="badge" id="sel-status"></div>
+    </div>
+    <div class="shipment__product">
+      <div class="shipment__thumb"><svg width="30" height="30" viewBox="0 0 24 24" fill="#b07a3a"><path d="M12 2l9 5v10l-9 5-9-5V7z"></path><path d="M3 7l9 5 9-5M12 12v10" stroke="#f3e3c7" stroke-width="1.4" fill="none"></path></svg></div>
+      <div class="shipment__meta">
+        <div class="panel__title" id="sel-code"></div>
+        <div class="shipment__desc" id="sel-desc"></div>
+      </div>
+    </div>
+    <div class="steps" id="sel-steps">
+      <div class="steps__bar"><div class="steps__fill" id="card-fill"></div></div>
+      <div class="steps__grid" id="card-steps">
+        <div class="step"><div class="step__dot"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"><path d="M5 12l5 5 9-10"></path></svg></div><div class="step__label">Recolectado</div></div>
+        <div class="step"><div class="step__dot"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"><path d="M5 12l5 5 9-10"></path></svg></div><div class="step__label">En tránsito</div></div>
+        <div class="step"><div class="step__dot"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"><path d="M5 12l5 5 9-10"></path></svg></div><div class="step__label">En almacén</div></div>
+        <div class="step"><div class="step__dot"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"><path d="M5 12l5 5 9-10"></path></svg></div><div class="step__label">Entregado</div></div>
+      </div>
+    </div>
+    <div class="facts" id="sel-facts"></div>
+    <button class="btn-outline" id="sel-details">Ver detalles <span>→</span></button>
+  </section>
+
+  <section class="panel tracking">
+    <div class="panel__title">Seguimiento del envío</div>
+    <div class="track">
+      <div class="track__bar"><div class="track__fill" id="track-fill"></div></div>
+      <div class="track__grid" id="track-steps">
+        <div class="tstep"><div class="tstep__icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2l9 5v10l-9 5-9-5V7z"></path><path d="M3 7l9 5 9-5M12 12v10"></path></svg></div><div class="tstep__label">Recolectado</div><div class="tstep__date"></div></div>
+        <div class="tstep"><div class="tstep__icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M2 6h12v10H2zM14 9h4l3 3.5V16h-7z"></path><circle cx="6" cy="17.5" r="1.8"></circle><circle cx="17" cy="17.5" r="1.8"></circle></svg></div><div class="tstep__label">En tránsito</div><div class="tstep__date"></div></div>
+        <div class="tstep"><div class="tstep__icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 21V9l9-5 9 5v12"></path><path d="M7 21v-8h10v8M7 17h10"></path></svg></div><div class="tstep__label">En almacén</div><div class="tstep__date"></div></div>
+        <div class="tstep"><div class="tstep__icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M2 6h12v10H2zM14 9h4l3 3.5V16h-7z"></path><circle cx="6" cy="17.5" r="1.8"></circle><circle cx="17" cy="17.5" r="1.8"></circle></svg></div><div class="tstep__label">En reparto</div><div class="tstep__date"></div></div>
+        <div class="tstep"><div class="tstep__icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5 9-10"></path></svg></div><div class="tstep__label">Entregado</div><div class="tstep__date"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel recent">
+    <div class="recent__head">
+      <div class="panel__title">Envíos recientes</div>
+      <a href="#envios" class="recent__all">Ver todos →</a>
+    </div>
+    <div class="recent__cols"><div>ID</div><div>Producto</div><div>Estado</div><div>Llegada</div></div>
+    <div id="rows"></div>
+  </section>
+
+  <section class="panel module" id="module" hidden></section>
+  <div class="tip" id="tip" hidden></div>
+  </div>
+</div>
+
+
+<script>
+  import "../scripts/app.js";
+</script>
+</body>
+</html>
