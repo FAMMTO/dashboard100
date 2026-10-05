@@ -1,5 +1,5 @@
 {
-  "name": "wavetrack-dashboard",
+  "name": "DASH100-dashboard",
   "type": "module",
   "version": "0.0.1",
   "private": true,
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "astro": "^7.3.5",
+    "leaflet": "^1.9.4",
     "three": "0.128.0"
   }
 }

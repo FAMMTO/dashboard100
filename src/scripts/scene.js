@@ -3,8 +3,9 @@ import * as T from "three";
 // Isometric 3D yard scene (three.js r128 API).
 // opts: { animationSpeed, cameraSway, showColliders } — read every frame, so they can be changed live.
 // opts.onSelect({ id, kind, parked }) fires when a truck or forklift is clicked.
-// Returns { zoomBy, recenter, select, focus, flyTo, setLabel, vehicles } for the UI to drive the camera.
-export function createWavetrackScene(el, opts = {}) {
+// opts.branch / opts.branchName: the branch to show first (see THEMES).
+// Returns { zoomBy, recenter, select, focus, flyTo, setLabel, setBranch, vehicles } for the UI to drive the camera.
+export function createDASH100Scene(el, opts = {}) {
   const renderer = new T.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0xe6ecf5);
@@ -66,9 +67,17 @@ export function createWavetrackScene(el, opts = {}) {
 
   // main warehouse
   const wx0 = 12, wz0 = -8, ww = 22, wd = 34, wh = 8, cx = wx0 + ww / 2, cz = wz0 + wd / 2;
+  // roofs and foliage get their own materials: setBranch recolours them per branch
+  const roofMat = new T.MeshStandardMaterial({ color: BLUE, roughness: 0.5 }), roofTop = new T.MeshStandardMaterial({ color: 0x3a6ff0, roughness: 0.5 });
+  const leafA = new T.MeshStandardMaterial({ color: 0x5fae6e, roughness: 0.9 }), leafB = new T.MeshStandardMaterial({ color: 0x4f9a5f, roughness: 0.9 });
   box(ww, wh, wd, M(WHITE), cx, 0, cz);
-  box(ww + 0.8, 0.7, wd + 0.8, M(BLUE, { roughness: 0.5 }), cx, wh, cz);
-  box(ww - 1, 0.25, wd - 1, M(0x3a6ff0, { roughness: 0.5 }), cx, wh + 0.7, cz);
+  box(ww + 0.8, 0.7, wd + 0.8, roofMat, cx, wh, cz);
+  box(ww - 1, 0.25, wd - 1, roofTop, cx, wh + 0.7, cz);
+  // branch name on the wall facing the camera, redrawn by setBranch
+  const signCv = document.createElement('canvas'); signCv.width = 1024; signCv.height = 192;
+  const signTex = new T.CanvasTexture(signCv); signTex.anisotropy = 8; signTex.encoding = T.sRGBEncoding;
+  const sign = new T.Mesh(new T.PlaneGeometry(13, 2.44), new T.MeshBasicMaterial({ map: signTex }));
+  sign.position.set(cx, 5.2, wz0 + wd + 0.06); scene.add(sign);
   box(0.5, wh, 0.5, M(BLUE), wx0 - 0.05, 0, wz0); box(0.5, wh, 0.5, M(BLUE), wx0 - 0.05, 0, wz0 + wd);
   box(0.2, 1.2, 3.2, M(0x23314d), wx0 - 0.1, 5.2, wz0 + 3);
   const docks = [2, 10, 18];
@@ -89,18 +98,37 @@ export function createWavetrackScene(el, opts = {}) {
   const py = M(0xf2c94c, { roughness: 0.6 });
   box(11, 0.05, 0.25, py, 2, 0, 15); box(11, 0.05, 0.25, py, 2, 0, 21); box(0.25, 0.05, 6, py, -3.5, 0, 18); box(0.25, 0.05, 6, py, 7.5, 0, 18);
   box(9, 0.05, 0.2, py, -12, 0, -3.2); box(9, 0.05, 0.2, py, -12, 0, 2.2);
-  const pal = (x, z) => box(1.7, 0.18, 1.7, M(0x9fb4d8), x, 0, z);
-  [[-20, -6], [-20, -3.8], [-17.8, -6], [-17.8, -3.8], [-15.6, -6]].forEach(([x, z], i) => { pal(x, z); cyl(0.65, 1.3 + (i % 2) * 0.3, M(0xf2f4f8, { roughness: 0.4 }), x, 0.18, z, null, 24); });
-  [[-21.5, -1.6], [-19.6, -1.6]].forEach(([x, z]) => { pal(x, z); box(1.5, 1.2, 1.5, M(0xf2f4f8, { roughness: 0.5 }), x, 0.18, z); });
+  // Each branch stocks different goods on the same pallets and has its own yard landmarks; setBranch shows one group.
+  const site = { mty: new T.Group(), gdl: new T.Group(), mid: new T.Group() };
+  Object.values(site).forEach(g => scene.add(g));
+  const pal = (x, z, g) => box(1.7, 0.18, 1.7, M(0x9fb4d8), x, 0, z, g);
+  const fillStock = (g, drum, crate, levels) => {
+    [[-20, -6], [-20, -3.8], [-17.8, -6], [-17.8, -3.8], [-15.6, -6]].forEach(([x, z], i) => { pal(x, z, g); cyl(0.65, 1.3 + (i % 2) * 0.3, drum, x, 0.18, z, g, 24); });
+    [[-21.5, -1.6], [-19.6, -1.6]].forEach(([x, z]) => { pal(x, z, g); box(1.5, 1.2, 1.5, M(0xf2f4f8, { roughness: 0.5 }), x, 0.18, z, g); });
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 2; b++) { pal(-13.6 + a * 1.9, -7 + b * 1.9, g); for (let c = 0; c < levels(a, b); c++) box(1.5, 0.8, 1.5, crate, -13.6 + a * 1.9, 0.18 + c * 0.82, -7 + b * 1.9, g); }
+  };
+  fillStock(site.mty, M(0xf2f4f8, { roughness: 0.4 }), M(BLUE, { roughness: 0.55 }), () => 2);
+  fillStock(site.gdl, M(0x9a5b2e, { roughness: 0.6 }), M(CARD), (a, b) => 1 + (a + b) % 3);
+  fillStock(site.mid, M(0x1aa7a1, { roughness: 0.45 }), M(0xf08a3c, { roughness: 0.55 }), a => 3 - a);
   const ball = new T.Mesh(new T.SphereGeometry(1.1, 32, 24), M(0x1fa85a, { roughness: 0.35 }));
-  ball.position.set(-22.5, 2.6, -6.5); ball.castShadow = true; scene.add(ball);
-  cyl(0.12, 1.6, M(0xb8c3d5), -22.5, 0, -6.5, null, 8);
-  for (let a = 0; a < 3; a++) for (let b = 0; b < 2; b++) { pal(-13.6 + a * 1.9, -7 + b * 1.9); for (let c = 0; c < 2; c++) box(1.5, 0.8, 1.5, M(BLUE, { roughness: 0.55 }), -13.6 + a * 1.9, 0.18 + c * 0.82, -7 + b * 1.9); }
+  ball.position.set(-22.5, 2.6, -6.5); ball.castShadow = true; site.mty.add(ball);
+  cyl(0.12, 1.6, M(0xb8c3d5), -22.5, 0, -6.5, site.mty, 8);
+  // Guadalajara: silos beside the manoeuvring yard
+  [-24, -20.2, -16.4].forEach(x => {
+    cyl(1.5, 6, M(0xe4e9f1, { roughness: 0.35, metalness: 0.3 }), x, 0, 17.5, site.gdl, 24); cyl(1.54, 0.5, M(0x0f8f80, { roughness: 0.5 }), x, 4.4, 17.5, site.gdl, 24);
+    const cap = new T.Mesh(new T.ConeGeometry(1.5, 1.2, 24), M(0xcfd6e2, { roughness: 0.35, metalness: 0.3 })); cap.position.set(x, 6.6, 17.5); cap.castShadow = true; site.gdl.add(cap);
+  });
+  // Mérida: palms and a water tank
+  [[-24.5, 15], [-20.5, 19.5], [-16, 15.5], [-12, 20]].forEach(([x, z], i) => {
+    const hgt = 4 + (i % 2) * 0.9; cyl(0.2, hgt, M(0x9a7b55, { roughness: 0.9 }), x, 0, z, site.mid, 8);
+    [[1.9, 0], [1.3, 0.35]].forEach(([r, dy], k) => { const f = new T.Mesh(new T.SphereGeometry(r, 12, 8), k ? leafA : leafB); f.scale.y = 0.3; f.position.set(x, hgt + dy, z); f.castShadow = true; site.mid.add(f); });
+  });
+  cyl(1.6, 2.2, M(0xf5f7fb, { roughness: 0.4 }), -24, 0, -6.5, site.mid, 24); cyl(1.64, 0.4, M(0xdb6a34, { roughness: 0.5 }), -24, 1.5, -6.5, site.mid, 24);
 
   // north warehouse
   box(30, 9, 24, M(WHITE), -30, 0, -54);
-  box(30.8, 0.7, 24.8, M(BLUE, { roughness: 0.5 }), -30, 9, -54);
-  box(29, 0.25, 23, M(0x3a6ff0, { roughness: 0.5 }), -30, 9.7, -54);
+  box(30.8, 0.7, 24.8, roofMat, -30, 9, -54);
+  box(29, 0.25, 23, roofTop, -30, 9.7, -54);
   const nDocks = [-40, -33, -26, -19];
   nDocks.forEach((dx, i) => {
     box(0.6, 5.4, 0.6, M(BLUE), dx - 2.6, 0, -41.7); box(0.6, 5.4, 0.6, M(BLUE), dx + 2.6, 0, -41.7);
@@ -117,7 +145,7 @@ export function createWavetrackScene(el, opts = {}) {
   box(4, 3, 0.3, M(BLUE), 60, 0, -37.9);
 
   // trees
-  const tree = (x, z) => { const s = 0.8 + rnd() * 0.5; cyl(0.15, 1.1 * s, M(0x8a6a4a), x, 0, z, null, 8); const c = new T.Mesh(new T.SphereGeometry(1.1 * s, 14, 10), M(rnd() > 0.5 ? 0x5fae6e : 0x4f9a5f, { roughness: 0.9 })); c.position.set(x, 1.1 * s + 0.9 * s, z); c.castShadow = true; scene.add(c); };
+  const tree = (x, z) => { const s = 0.8 + rnd() * 0.5; cyl(0.15, 1.1 * s, M(0x8a6a4a), x, 0, z, null, 8); const c = new T.Mesh(new T.SphereGeometry(1.1 * s, 14, 10), rnd() > 0.5 ? leafA : leafB); c.position.set(x, 1.1 * s + 0.9 * s, z); c.castShadow = true; scene.add(c); };
   for (let x = -90; x < 36; x += 7) if (x < -48 || x > -12) tree(x, -26);
   for (let x = 70; x < 110; x += 7) tree(x, -26);
   for (let z = 22; z < 70; z += 7) tree(36, z);
@@ -129,7 +157,7 @@ export function createWavetrackScene(el, opts = {}) {
   [54.5, 61.5, 74.5, 81.5].forEach(bx => { for (let z = -6; z <= 36; z += 2.8) { if (Math.abs(z - 16) < 3) continue; const n = 1 + Math.floor(rnd() * 3); for (let k = 0; k < n; k++) { box(6, 2.5, 2.5, M(cCols[Math.floor(rnd() * cCols.length)], { roughness: 0.6 }), bx, k * 2.55, z); } } });
 
   // trucks + forklifts
-  const sideTex = tex(512, 128, (g, w, h) => { g.fillStyle = '#f7f9fc'; g.fillRect(0, 0, w, h); g.strokeStyle = '#2457e6'; g.lineWidth = 9; g.lineCap = 'round'; g.beginPath(); g.moveTo(110, 48); g.quadraticCurveTo(140, 100, 170, 48); g.stroke(); g.globalAlpha = .55; g.beginPath(); g.moveTo(126, 44); g.quadraticCurveTo(140, 72, 154, 44); g.stroke(); g.globalAlpha = 1; g.fillStyle = '#2457e6'; g.font = 'italic 800 54px Manrope, sans-serif'; g.textBaseline = 'middle'; g.fillText('Wavetrack', 186, 66); });
+  const sideTex = tex(512, 128, (g, w, h) => { g.fillStyle = '#f7f9fc'; g.fillRect(0, 0, w, h); g.strokeStyle = '#2457e6'; g.lineWidth = 9; g.lineCap = 'round'; g.beginPath(); g.moveTo(110, 48); g.quadraticCurveTo(140, 100, 170, 48); g.stroke(); g.globalAlpha = .55; g.beginPath(); g.moveTo(126, 44); g.quadraticCurveTo(140, 72, 154, 44); g.stroke(); g.globalAlpha = 1; g.fillStyle = '#2457e6'; g.font = 'italic 800 54px Manrope, sans-serif'; g.textBaseline = 'middle'; g.fillText('DASH100', 186, 66); });
   const makeTruck = () => {
     const g = new T.Group();
     box(9, 3.3, 2.6, M(WHITE, { roughness: 0.5 }), 0, 1.2, 0, g);
@@ -246,6 +274,28 @@ export function createWavetrackScene(el, opts = {}) {
   // focus: select a vehicle and keep the camera on it until the user drags the map
   const focus = id => { if (!select(id)) return; view.follow = selected; view.zt = 1.3; view.vel = { x: 0, z: 0 }; };
   const flyTo = (x, z, zoom = 1.6) => { view.follow = null; spot = { x, z }; view.go = { x, z }; view.zt = zoom; view.vel = { x: 0, z: 0 }; };
+  // ---- branches: same yard, different look (ground, roofs, foliage, stock and landmarks) ----
+  const THEMES = {
+    mty: { sky: 0xe6ecf5, ground: 0xe9eef6, pad: 0xf2f5fa, roof: [BLUE, 0x3a6ff0], leaf: [0x5fae6e, 0x4f9a5f] },
+    gdl: { sky: 0xece8e0, ground: 0xefebe3, pad: 0xf8f5ee, roof: [0x0f8f80, 0x25ab9a], leaf: [0x9a80d6, 0x8367c7] },
+    mid: { sky: 0xf1e8d6, ground: 0xf3ebda, pad: 0xfbf5e6, roof: [0xdb6a34, 0xee8650], leaf: [0x35a56c, 0x2a8f5a] },
+  };
+  let branch = null;
+  const setBranch = (id, name) => {
+    if (!THEMES[id]) id = 'mty';
+    const th = THEMES[id], g = signCv.getContext('2d');
+    renderer.setClearColor(th.sky); scene.fog.color.setHex(th.sky);
+    ground.material.color.setHex(th.ground); M(0xf2f5fa).color.setHex(th.pad);
+    roofMat.color.setHex(th.roof[0]); roofTop.color.setHex(th.roof[1]);
+    leafA.color.setHex(th.leaf[0]); leafB.color.setHex(th.leaf[1]);
+    for (const k in site) site[k].visible = k === id;
+    g.fillStyle = '#16233b'; g.fillRect(0, 0, 1024, 192);
+    g.fillStyle = '#fff'; g.font = '800 96px Manrope, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name || '', 512, 102);
+    signTex.needsUpdate = true;
+    if (branch && branch !== id) recenter(); // switching branch shows the whole yard again
+    branch = id;
+  };
+  setBranch(opts.branch, opts.branchName);
   el.style.cursor = 'grab'; el.style.touchAction = 'none';
   let drag = null, press = null, hover = null;
   const panBy = (dx, dy) => {
@@ -320,5 +370,5 @@ export function createWavetrackScene(el, opts = {}) {
   };
   loop();
 
-  return { zoomBy, recenter, select, focus, flyTo, setLabel, vehicles: V.map(info) };
+  return { zoomBy, recenter, select, focus, flyTo, setLabel, setBranch, vehicles: V.map(info) };
 }
