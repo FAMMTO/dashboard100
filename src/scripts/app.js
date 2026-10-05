@@ -150,6 +150,7 @@ const markSelected = () => document.querySelectorAll('#module [data-vehicle]').f
 // `follow` also moves the camera to the vehicle and keeps it there (used by the module pages' 3D preview).
 async function selectVehicle(vehicle, follow = false) {
   selected = vehicle;
+  if (follow) app.classList.add('sheet-open'); // small screens: the vehicle's card slides up over the page
   if (scene) follow ? scene.focus(vehicle.id) : scene.select(vehicle.id);
   markSelected();
   const mine = ++request;
@@ -190,6 +191,7 @@ function updateAlertBadges() {
 async function showView() {
   const view = currentView(), token = ++viewToken, mod = $('module');
   app.dataset.view = view;
+  app.classList.remove('sheet-open');
   document.querySelectorAll('.nav__item[data-view]').forEach(item => {
     item.classList.toggle('is-active', item.dataset.view === view);
     if (item.dataset.view === view) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current');
@@ -299,7 +301,20 @@ function onLayoutChange() {
   layoutTimer = setTimeout(() => { if (currentView() === 'reportes') showView(); }, 300);
 }
 
+// Small screens (see the last block of global.css): the side menu is a drawer opened from the top bar, and on the
+// pages the selected vehicle's card is a sheet that slides up from the bottom.
+function initMobile() {
+  const menu = open => { app.classList.toggle('menu-open', open); $('menu-btn').setAttribute('aria-expanded', String(open)); if (open) app.classList.remove('sheet-open'); };
+  const closeAll = () => { menu(false); app.classList.remove('sheet-open'); };
+  $('menu-btn').addEventListener('click', () => menu(!app.classList.contains('menu-open')));
+  $('scrim').addEventListener('click', closeAll);
+  $('sheet-close').addEventListener('click', () => app.classList.remove('sheet-open'));
+  $('sidebar').addEventListener('click', e => { if (e.target.closest('.nav__item[data-view]')) menu(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+}
+
 initSidebar();
+initMobile();
 renderClock();
 setInterval(renderClock, 15000);
 getBranches().then(initBranches);
