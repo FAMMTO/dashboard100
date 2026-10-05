@@ -389,7 +389,7 @@ export async function getAlerts() {
 
 // ---- costs: material arrivals (entradas) and sales (salidas) ----
 // Records are kept in this browser's IndexedDB, receipts included, until there is a real database.
-// Replace the four functions below with API calls; the "Costos" page only uses these.
+// Replace the four functions below with API calls; the "Pedidos" page only uses these.
 // Record: { id, type: 'entrada' | 'salida', folio, date: 'YYYY-MM-DD', material, party, quantity, unit, unitPrice,
 //           payment: File | null, invoice: File | null, notes,
 //           clientId: string | null, origin, dest, address (sales to a saved client: where it leaves from and goes to),
@@ -454,7 +454,7 @@ const STARTING_CATALOG = [
   ['Plástico (PET)', 9000, 11800], ['Polietileno', 11000, 14300], ['Vidrio', 1200, 1750], ['Resina', 24000, 30500],
 ].map(([name, costPerTon, salePerTon], i) => ({ id: `mat-${String(i + 1).padStart(4, '0')}`, name, costPerTon, salePerTon, notes: '' }));
 
-/** Every material in the catalogue, by name. It is also the "Materia prima" list of Costos. */
+/** Every material in the catalogue, by name. It is also the "Materia prima" list of Pedidos. */
 export async function getCatalog() {
   await seedOnce('materials', STARTING_CATALOG);
   const rows = await inStore('readonly', store => store.getAll(), 'materials');

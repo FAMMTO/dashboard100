@@ -1,5 +1,5 @@
 // "Proveedores" page: who the company buys material from. Each supplier sells one or more materials of the
-// catalogue and sets its own price for each; a purchase (entrada) in Costos starts from that price.
+// catalogue and sets its own price for each; a purchase (entrada) in Pedidos starts from that price.
 import { getSuppliers, saveSupplier, deleteSupplier, getCatalog, getMovements } from './data.js';
 import { h, card, stats, empty, label, input, amountInput, parseAmount, unitMoney } from './ui.js';
 import { newId } from './clientes.js';

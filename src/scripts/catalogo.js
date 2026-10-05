@@ -1,5 +1,5 @@
 // "Catálogo" page: every material the company trades (cartón, madera, metal…) with what a tonne costs us and what
-// we sell it for. The figures per kilo and the profit are worked out from those two. Costos takes its list of
+// we sell it for. The figures per kilo and the profit are worked out from those two. Pedidos takes its list of
 // materials, and its suggested prices, from here.
 import { getCatalog, saveMaterial, deleteMaterial, getMovements, getSuppliers } from './data.js';
 import { h, card, stats, empty, label, input, amountInput, parseAmount, unitMoney } from './ui.js';

@@ -4,7 +4,7 @@
 //        config, saveConfig(), alerts, alertsChanged() } — see showView() in app.js.
 import { getRoutes, getWarehouse, getReports, getOnTime, getOnTimePeriods, orderProfit } from './data.js';
 import { h, badge, card, section, stats, empty, pesos } from './ui.js';
-import { costos } from './costos.js';
+import { pedidos } from './pedidos.js';
 import { clientes } from './clientes.js';
 import { catalogo } from './catalogo.js';
 import { proveedores } from './proveedores.js';
@@ -282,7 +282,7 @@ export const modules = {
     },
   },
 
-  costos, clientes, proveedores, catalogo,
+  pedidos, clientes, proveedores, catalogo,
 
   alertas: {
     title: 'Alertas', sub: 'Selecciona una alerta para ver dónde ocurre.',

@@ -1,4 +1,4 @@
-// "Costos" page: material arrivals (entradas) and sales (salidas), each with price, quantity and its receipts.
+// "Pedidos" page: material arrivals (entradas) and sales (salidas), each with price, quantity and its receipts.
 // Materials come from the Catálogo page, clients from Clientes and suppliers (with their prices) from Proveedores.
 import { getCatalog, getMovements, saveMovement, deleteMovement, getClients, saveClient, getSuppliers, getRouteCities } from './data.js';
 import { h, badge, card, stats, empty, label, input, amountInput, groupAmount, parseAmount, unitMoney } from './ui.js';
@@ -26,12 +26,12 @@ const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 // A catalogue price of a material ('costPerTon' or 'salePerTon') in a unit; null if it has none or the unit is not a weight.
 const catalogPrice = (material, key, unit) => !material || !(material[key] > 0) ? null : unit === 'toneladas' ? material[key] : unit === 'kg' ? material[key] / 1000 : null;
 
-export const costos = {
-  title: 'Costos', sub: 'Entradas de materia prima y salidas por venta, con precio, cantidad y comprobantes.', preview: false,
+export const pedidos = {
+  title: 'Pedidos', sub: 'Entradas de materia prima y salidas por venta, con precio, cantidad y comprobantes.', preview: false,
   async render({ body, actions, branch }) {
     let catalog, all, clients, cities, suppliers;
     try { [catalog, all, clients, cities, suppliers] = await Promise.all([getCatalog(), getMovements(), getClients(), getRouteCities(), getSuppliers()]); }
-    catch { body.replaceChildren(empty('No se pudo abrir el almacenamiento de este navegador, así que no es posible registrar costos aquí.')); return; }
+    catch { body.replaceChildren(empty('No se pudo abrir el almacenamiento de este navegador, así que no es posible registrar pedidos aquí.')); return; }
     const from = branch ? branch.city : 'Monterrey'; // sales leave from the selected branch
 
     let type = 'entrada', editing = null, confirming = null; // editing: the record in the form ({} for a new one)

@@ -44,7 +44,7 @@ export function amountInput(attrs, decimals = 2) {
   return field;
 }
 
-// ---- form controls and figures shared by the pages that keep records (Costos, Clientes, Catálogo) ----
+// ---- form controls and figures shared by the pages that keep records (Pedidos, Clientes, Catálogo) ----
 export const label = (text, control, cls) => h('label', { class: 'lbl' + (cls ? ' ' + cls : '') }, text, control);
 export const input = attrs => h('input', { class: 'input', ...attrs });
 /** A price per unit: pesos with cents, and up to 4 decimals when it needs them (a kilo of cardboard costs $2.85, or $1.2345). */

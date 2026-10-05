@@ -1,4 +1,4 @@
-// Invoice of a sale ("Guardar y Factura" in Costos): a self-contained page that can be printed or saved as PDF.
+// Invoice of a sale ("Guardar y Factura" in Pedidos): a self-contained page that can be printed or saved as PDF.
 // It is an internal document, not a fiscal one: a CFDI valid before the SAT has to be stamped by a PAC, which
 // this app does not do yet. Prices are taken as before tax and IVA is added on top.
 const IVA = 0.16;
