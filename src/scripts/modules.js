@@ -3,12 +3,14 @@
 // ctx: { body, actions, fleet, state, branches, branch, select(vehicleId), flyTo(x, z, zoom), mark(), tip(event, text),
 //        config, saveConfig(), alerts, alertsChanged() } — see showView() in app.js.
 import { getRoutes, getWarehouse, getReports, getOnTime, getOnTimePeriods, orderProfit } from './data.js';
-import { h, badge, card, section, stats, empty, pesos } from './ui.js';
+import { h, badge, card, section, foldSection, stats, empty, pesos, label } from './ui.js';
 import { pedidos } from './pedidos.js';
 import { clientes } from './clientes.js';
 import { catalogo } from './catalogo.js';
 import { proveedores } from './proveedores.js';
 import { askAgent, SUGGESTIONS } from './agent.js';
+import { getTemplate, saveTemplate, resetTemplate, fillTemplate, PLACEHOLDERS, PLACEHOLDER_LABELS } from './ocmail.js';
+import { tokenEditor, paletteToken } from './tokeneditor.js';
 
 const svg = (tag, attrs, ...kids) => {
   const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -307,14 +309,42 @@ export const modules = {
     render({ body, config, saveConfig, resetConfig }) {
       const setting = (title, sub, control) => h('div', { class: 'setting' }, h('div', { class: 'setting__text' }, h('div', { class: 'item__title' }, title), h('div', { class: 'item__sub' }, sub)), h('div', { class: 'setting__control' }, control));
       const toggle = key => { const b = h('button', { class: 'switch', role: 'switch', 'aria-checked': String(config[key]), onclick: () => { config[key] = !config[key]; b.setAttribute('aria-checked', String(config[key])); saveConfig(); } }); return b; };
+      // Template of the e-mail a purchase order (OC) is sent with. The fields the order fills in show as boxes that
+      // are dragged (or clicked) from the palette into the subject or the message. It is saved as it is edited; the
+      // example under it shows how it reads with a sample order.
+      const mailTemplate = () => {
+        const t = getTemplate(), sample = { proveedor: 'Recicladora del Norte', contacto: 'Sergio Garza', material: 'Cartón', cantidad: '12', unidad: 'toneladas', precio: '$2,650.00 por tonelada', total: '$31,800.00', folio: 'OC-0001', fecha: '5 oct 2026', sucursal: 'Monterrey', notas: '' };
+        const preview = h('pre', { class: 'mailpreview' }), company = h('input', { class: 'input', value: t.company, placeholder: 'Nombre de la empresa' }), sender = h('input', { class: 'input', value: t.sender, placeholder: 'Nombre de quien firma' });
+        const save = () => {
+          const now = { company: company.value, sender: sender.value, subject: subject.getValue(), body: message.getValue() }, values = { ...sample, usuario: now.sender, empresa: now.company };
+          saveTemplate(now);
+          preview.textContent = `Asunto: ${fillTemplate(now.subject, values)}\n\n${fillTemplate(now.body, values)}`;
+        };
+        const subject = tokenEditor({ value: t.subject, labels: PLACEHOLDER_LABELS, multiline: false, onChange: save, label: 'Asunto' }), message = tokenEditor({ value: t.body, labels: PLACEHOLDER_LABELS, onChange: save, label: 'Mensaje' });
+        let target = message; // the box a clicked field goes to: the last one of the two that was used
+        subject.el.addEventListener('focus', () => { target = subject; }); message.el.addEventListener('focus', () => { target = message; });
+        const fields = h('div', { class: 'form__grid', oninput: save },
+          label('Empresa (firma)', company, 'span2'), label('Quien envía (firma)', sender, 'span2'),
+          h('div', { class: 'lbl span4' }, 'Asunto', subject.el),
+          h('div', { class: 'lbl span4' }, 'Datos de la orden',
+            h('div', { class: 'tokens' }, PLACEHOLDERS.map(([name, what, text]) => paletteToken(name, text, what, picked => target.insert(picked)))),
+            h('span', { class: 'lbl__hint' }, 'Arrastra un dato al asunto o al mensaje, o haz clic para insertarlo donde está el cursor. Dentro del texto puedes moverlo arrastrándolo y quitarlo con la tecla de borrar.')),
+          h('div', { class: 'lbl span4' }, 'Mensaje', message.el));
+        save();
+        return foldSection('Correo de las órdenes de compra (OC)', 'oc-mail',
+          h('div', { class: 'item__sub' }, 'Plantilla del mensaje que se envía al proveedor al dar "Enviar" en una OC. Cada dato en azul se sustituye con el de la orden.'),
+          fields,
+          h('div', { class: 'item__title' }, 'Así se ve con una orden de ejemplo'), preview,
+          h('div', null, h('button', { class: 'btn-small', onclick: () => { resetTemplate(); draw(); } }, 'Restablecer plantilla')));
+      };
       const draw = () => {
         const speedLabel = h('span', null, config.animationSpeed.toFixed(1) + '×');
         const speed = h('input', { type: 'range', min: 0, max: 3, step: 0.1, value: config.animationSpeed, 'aria-label': 'Velocidad de animación', oninput: e => { config.animationSpeed = Number(e.target.value); speedLabel.textContent = config.animationSpeed.toFixed(1) + '×'; saveConfig(); } });
-        body.replaceChildren(h('div', { class: 'narrow' }, section('Escena 3D',
+        body.replaceChildren(h('div', { class: 'narrow' }, foldSection('Escena 3D', 'scene',
           setting('Velocidad de animación', 'Qué tan rápido se mueven los vehículos. En 0 se detienen.', [speed, speedLabel]),
           setting('Balanceo de cámara', 'Movimiento suave de la cámara cuando no se arrastra el mapa.', toggle('cameraSway')),
           setting('Mostrar colisionadores', 'Dibuja el contorno de colisión de cada vehículo; en rojo cuando está bloqueado.', toggle('showColliders')),
-        )), h('div', null, h('button', { class: 'btn-small', onclick: () => { resetConfig(); draw(); } }, 'Restablecer valores')));
+        ), h('div', null, h('button', { class: 'btn-small', onclick: () => { resetConfig(); draw(); } }, 'Restablecer valores de la escena')), mailTemplate()));
       };
       draw();
     },

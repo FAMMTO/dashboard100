@@ -325,6 +325,12 @@ button { font: inherit; color: inherit; }
 .versus__diff.is-loss { background: #fdecea; color: #d92d20; }
 .legend__swatch--now { background: var(--blue); }
 .legend__swatch--before { background: repeating-linear-gradient(90deg, #a9b4c7 0 3px, transparent 3px 5px); }
+/* a section that folds (Configuración) */
+.fold__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 0; border: none; background: none; cursor: pointer; text-align: left; color: var(--ink); }
+.fold__chevron { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%; background: #f0f4fb; color: #3d4a60; transition: transform .2s, background .2s; }
+.fold__head:hover .fold__chevron { background: #e4ecfd; color: var(--blue); }
+.fold__head[aria-expanded="false"] .fold__chevron { transform: rotate(-90deg); }
+.fold__body { display: flex; flex-direction: column; gap: 10px; }
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .field {
   flex: 1; min-width: 160px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px;
@@ -561,6 +567,18 @@ button { font: inherit; color: inherit; }
 .offer__kg { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .offer__remove { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: #c62828; cursor: pointer; }
 .offer__remove:hover { background: #fde8e8; border-color: #f3c4c4; }
+.tag--here { background: #e4ecfd; color: var(--blue); font-weight: 700; }
+/* a group of options to tick (e.g. the branches a supplier delivers to) */
+.checkgroup { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: none; min-width: 0; }
+.checkgroup legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 700; }
+.checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.check { position: relative; cursor: pointer; }
+.check input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.check span { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border: 1px solid var(--line); border-radius: 17px; background: #fff; font-size: 12px; font-weight: 700; color: #3d4a60; transition: background .2s, border-color .2s, color .2s; }
+.check span::before { content: ''; width: 14px; height: 14px; border-radius: 4px; border: 2px solid #c9d3e3; background: #fff; }
+.check input:checked + span { border-color: var(--blue); background: #eef3fd; color: var(--blue); }
+.check input:checked + span::before { border-color: var(--blue); background: var(--blue) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center / 10px no-repeat; }
+.check input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 2px; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag { padding: 3px 9px; border-radius: 8px; background: #f0f4fb; font-size: 12px; font-weight: 500; color: #3d4a60; white-space: nowrap; }
 .tag strong { font-weight: 700; color: var(--ink); }
@@ -584,6 +602,21 @@ button { font: inherit; color: inherit; }
   font: inherit; font-size: 13px; font-weight: 500; color: var(--ink); background: #fff; outline: none;
 }
 .input:focus { border-color: var(--blue); }
+.textarea { height: auto; min-height: 120px; padding: 10px 12px; line-height: 1.5; resize: vertical; }
+/* the e-mail a purchase order is sent with: its fields in the order form, and the example in Configuración */
+.mailbox { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 14px; background: #f6f8fc; border: 1px solid var(--line); }
+.mailbox__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mailpreview { margin: 0; padding: 14px 16px; border-radius: 12px; background: #f6f8fc; border: 1px solid var(--line); font: 500 13px/1.55 inherit; font-family: inherit; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* fields of a template shown as boxes: inside the editor, and in the palette they are dragged from */
+.token { display: inline-block; margin: 0 1px; padding: 1px 8px; border-radius: 7px; background: #e4ecfd; color: var(--blue); font-size: 12px; font-weight: 700; line-height: 1.5; white-space: nowrap; cursor: grab; user-select: none; -webkit-user-select: none; vertical-align: baseline; }
+.token:active { cursor: grabbing; }
+.token--palette { margin: 0; padding: 5px 10px; border: 1px solid #cfdcfb; font-family: inherit; transition: background .2s, box-shadow .2s; }
+.token--palette:hover { background: #d6e2fc; box-shadow: 0 2px 8px rgba(36, 87, 230, .18); }
+.token__value { margin-left: 6px; font-weight: 500; color: #3d4a60; }
+.tokens { display: flex; flex-wrap: wrap; gap: 6px; }
+.tokenedit { height: auto; min-height: 38px; padding: 8px 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
+.tokenedit--multi { min-height: 260px; max-height: 480px; overflow-y: auto; resize: vertical; }
+.tokenedit:focus { border-color: var(--blue); }
 .input[type="file"] { padding: 7px 8px; font-size: 12px; }
 .form__total { height: 38px; display: flex; align-items: center; font-size: 20px; font-weight: 800; }
 .form__error { padding: 10px 12px; border-radius: 10px; background: #fde8e8; color: #c62828; font-size: 12px; font-weight: 700; }

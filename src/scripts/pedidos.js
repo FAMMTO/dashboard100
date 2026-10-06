@@ -1,16 +1,20 @@
-// "Pedidos" page: material arrivals (entradas) and sales (salidas), each with price, quantity and its receipts.
+// "Pedidos" page: purchase orders (OC: the material asked of suppliers) and sales (salidas), each with price,
+// quantity and its receipts.
 // Materials come from the Catálogo page, clients from Clientes and suppliers (with their prices) from Proveedores.
 import { getCatalog, getMovements, saveMovement, deleteMovement, getClients, saveClient, getSuppliers, getRouteCities } from './data.js';
 import { h, badge, card, stats, empty, label, input, amountInput, groupAmount, parseAmount, unitMoney } from './ui.js';
 import { buildInvoice } from './invoice.js';
 import { clientFields, readClient, clientAddress, clientRoute, routeSummary, wirePostalCode, newId } from './clientes.js';
 import { openRouteMap } from './routemap.js';
-import { offerName } from './proveedores.js';
+import { offerName, deliversTo } from './proveedores.js';
+import { getTemplate, fillTemplate, isEmail, sendMail, PLACEHOLDERS } from './ocmail.js';
 
 const UNITS = ['kg', 'toneladas', 'piezas', 'tarimas', 'litros'];
+const UNIT_ONE = { kg: 'kg', toneladas: 'tonelada', piezas: 'pieza', tarimas: 'tarima', litros: 'litro' };
 const MAX_FILE_MB = 10;
 const KIND = {
-  entrada: { tab: 'Entradas', add: 'Nueva entrada', edit: 'Editar entrada', party: 'Proveedor', prefix: 'ENT', empty: 'Aún no hay entradas registradas. Usa "Nueva entrada" cuando llegue material.' },
+  // 'entrada' is a purchase order (OC): what is asked of a supplier. The key stays as it is saved in the records.
+  entrada: { tab: 'OC (órdenes de compra)', add: 'Nueva OC', edit: 'Editar OC', party: 'Proveedor', prefix: 'OC', empty: 'Aún no hay órdenes de compra. Usa "Nueva OC" para solicitar material a un proveedor.' },
   salida: { tab: 'Salidas', add: 'Nueva salida', edit: 'Editar salida', party: 'Cliente', prefix: 'SAL', empty: 'Aún no hay salidas registradas. Usa "Nueva salida" cuando se venda algo.' },
 };
 // Values of the client and supplier dropdowns that are not a saved record.
@@ -27,12 +31,13 @@ const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 const catalogPrice = (material, key, unit) => !material || !(material[key] > 0) ? null : unit === 'toneladas' ? material[key] : unit === 'kg' ? material[key] / 1000 : null;
 
 export const pedidos = {
-  title: 'Pedidos', sub: 'Entradas de materia prima y salidas por venta, con precio, cantidad y comprobantes.', preview: false,
+  title: 'Pedidos', sub: 'Órdenes de compra (OC) para solicitar material a proveedores y salidas por venta, con precio, cantidad y comprobantes.', preview: false,
   async render({ body, actions, branch }) {
     let catalog, all, clients, cities, suppliers;
     try { [catalog, all, clients, cities, suppliers] = await Promise.all([getCatalog(), getMovements(), getClients(), getRouteCities(), getSuppliers()]); }
     catch { body.replaceChildren(empty('No se pudo abrir el almacenamiento de este navegador, así que no es posible registrar pedidos aquí.')); return; }
     const from = branch ? branch.city : 'Monterrey'; // sales leave from the selected branch
+    const nearby = suppliers.filter(s => deliversTo(s, branch && branch.id)); // only the suppliers that deliver to this branch can be picked
 
     let type = 'entrada', editing = null, confirming = null; // editing: the record in the form ({} for a new one)
     const nextFolio = () => {
@@ -69,20 +74,34 @@ export const pedidos = {
       return [label('Cliente', select, 'span2'), extra, delivery];
     };
 
-    // Supplier of a purchase: one of the saved ones (its materials and prices then drive the form), or a name typed
-    // for one that is not registered. `onPick` is told every time the choice changes.
+    // Supplier of a purchase order: one of the saved ones (its materials and prices then drive the form), or a name
+    // typed for one that is not registered. Supplier and material restrict each other: with a material chosen, only the
+    // suppliers that have it registered are offered (`list(material)`); `onPick` is told when the supplier changes.
+    const sells = (s, material) => s.materials.some(o => offerName(o, catalog) === material);
     const supplierPicker = (rec, onPick) => {
       const known = suppliers.find(s => s.id === rec.supplierId) || suppliers.find(s => rec.party && same(s.name, rec.party));
-      const typed = input({ name: 'party', placeholder: 'Nombre del proveedor', required: true, disabled: true });
+      const typed = input({ name: 'party', placeholder: 'Nombre del proveedor', required: true, disabled: true }), hint = h('span', { class: 'lbl__hint' });
       const other = label('Nombre del proveedor', [typed, h('span', { class: 'lbl__hint' }, 'Regístralo en Proveedores para guardar los materiales que vende y sus precios.')], 'span2');
-      const select = h('select', { class: 'input', name: 'supplier', required: true, onchange: () => { const on = select.value === OTHER_SUPPLIER; other.hidden = !on; typed.disabled = !on; if (on) typed.focus(); onPick(current()); } },
-        h('option', { value: '' }, suppliers.length ? 'Selecciona un proveedor…' : 'Aún no hay proveedores'),
-        suppliers.map(s => h('option', { value: s.id, selected: s === known }, s.name)),
-        rec.party && !known ? h('option', { value: KEEP_NAME, selected: true }, `${rec.party} (sin registrar)`) : null,
-        h('option', { value: OTHER_SUPPLIER }, '＋ Otro proveedor (sin registrar)…'));
+      const showOther = () => { const on = select.value === OTHER_SUPPLIER; other.hidden = !on; typed.disabled = !on; return on; };
+      const select = h('select', { class: 'input', name: 'supplier', required: true, onchange: () => { if (showOther()) typed.focus(); onPick(current()); } });
       const current = () => suppliers.find(s => s.id === select.value) || null;
-      other.hidden = true;
-      return { fields: [label('Proveedor', select, 'span2'), other], current };
+      let chosen = known ? known.id : rec.party ? KEEP_NAME : ''; // what is selected, kept while the list is refilled
+      const list = material => {
+        if (select.options.length) chosen = select.value;
+        const can = nearby.filter(s => !material || sells(s, material));
+        // The supplier of the record being edited stays available even if it no longer delivers here.
+        const extra = known && !can.includes(known) && (!material || sells(known, material)) ? [h('option', { value: known.id }, `${known.name} (no entrega en ${from})`)] : [];
+        select.replaceChildren(
+          h('option', { value: '' }, can.length || extra.length ? 'Selecciona un proveedor…' : material ? `Ningún proveedor en ${from} vende ${material}` : suppliers.length ? `Ningún proveedor entrega en ${from}` : 'Aún no hay proveedores'),
+          ...can.map(s => h('option', { value: s.id }, s.name)), ...extra,
+          ...(rec.party && !known ? [h('option', { value: KEEP_NAME }, `${rec.party} (sin registrar)`)] : []),
+          h('option', { value: OTHER_SUPPLIER }, '＋ Otro proveedor (sin registrar)…'));
+        select.value = [...select.options].some(o => o.value === chosen) ? chosen : '';
+        hint.textContent = material ? `Proveedores que entregan en ${from} y venden ${material}.` : `Proveedores que entregan en ${from}.`;
+        showOther();
+      };
+      list(rec.material || '');
+      return { fields: [label('Proveedor', [select, hint], 'span2'), other], current, list };
     };
 
     const form = rec => {
@@ -103,12 +122,12 @@ export const pedidos = {
       // A sale also says who the material comes from and what that supplier charges for it, to see what the sale leaves.
       const source = type === 'salida' ? h('select', { class: 'input', name: 'source' }) : null, sourceCost = h('div', { class: 'form__total' }), gain = h('div', { class: 'form__total' });
       // Suppliers that sell the chosen material, cheapest first: [supplier, its offer].
-      const sellers = () => suppliers.map(s => [s, s.materials.find(o => offerName(o, catalog) === f.elements.material.value)]).filter(pair => pair[1]).sort((a, b) => a[1].pricePerTon - b[1].pricePerTon);
+      const sellers = () => nearby.map(s => [s, s.materials.find(o => offerName(o, catalog) === f.elements.material.value)]).filter(pair => pair[1]).sort((a, b) => a[1].pricePerTon - b[1].pricePerTon);
       const pickedSource = () => sellers().find(pair => pair[0].id === source.value) || null;
       // Refills the supplier list for the chosen material, keeping the chosen supplier if it sells it; otherwise the cheapest one.
       const listSources = keep => {
         const list = sellers(), wanted = keep ?? source.value, chosen = list.some(pair => pair[0].id === wanted) ? wanted : list.length ? list[0][0].id : '';
-        source.replaceChildren(h('option', { value: '' }, list.length ? 'Sin proveedor' : f.elements.material.value ? 'Ningún proveedor vende este material' : 'Elige primero la materia prima'),
+        source.replaceChildren(h('option', { value: '' }, list.length ? 'Sin proveedor' : f.elements.material.value ? `Ningún proveedor lo entrega en ${from}` : 'Elige primero la materia prima'),
           ...list.map(([s, o]) => h('option', { value: s.id, selected: s.id === chosen }, `${s.name} · ${unitMoney(o.pricePerTon)} por tonelada`)));
       };
       // What the chosen supplier charges per unit of the sale (null if there is none, or the unit is not a weight).
@@ -138,6 +157,26 @@ export const pedidos = {
         price.value = price.dataset.auto = start == null ? '' : groupAmount(String(Math.round(start * 1e4) / 1e4), 4);
         updateTotal();
       };
+      // A purchase order is sent to its supplier by e-mail. The message starts from the template (Configuración) filled
+      // in with the order, and follows the form until the user rewrites it by hand.
+      const mail = supplier ? { to: input({ name: 'mailTo', type: 'email', placeholder: 'correo@proveedor.mx', autocomplete: 'off' }), subject: input({ name: 'mailSubject' }), body: h('textarea', { class: 'input textarea', name: 'mailBody', rows: 14 }), edited: new Set(), values: h('div', { class: 'tokens' }) } : null;
+      const refreshMail = () => {
+        if (!mail) return;
+        const seller = supplier.current(), unit = f.elements.unit.value, quantity = parseAmount(f.elements.quantity.value), unitPrice = parseAmount(price.value), template = getTemplate();
+        const values = {
+          proveedor: seller ? seller.name : f.elements.party.value.trim(), contacto: seller ? seller.contact || seller.name : f.elements.party.value.trim(), material: f.elements.material.value,
+          cantidad: quantity > 0 ? quantity.toLocaleString('es-MX') : '', unidad: unit, precio: unitPrice >= 0 ? `${unitMoney(unitPrice)} por ${UNIT_ONE[unit] || unit}` : '', total: quantity > 0 && unitPrice >= 0 ? money(quantity * unitPrice) : '',
+          folio: rec.folio || nextFolio(), fecha: f.elements.date.value ? showDate(f.elements.date.value) : '', sucursal: from, notas: f.elements.notes.value.trim(), usuario: template.sender, empresa: template.company,
+        };
+        if (!mail.edited.has('mailTo')) mail.to.value = seller ? seller.email || '' : '';
+        if (!mail.edited.has('mailSubject')) mail.subject.value = fillTemplate(template.subject, values);
+        if (!mail.edited.has('mailBody')) mail.body.value = fillTemplate(template.body, values);
+        // The order's data as boxes: dragged into the message (or clicked), each drops its current value as text.
+        const put = text => { mail.body.setRangeText(text, mail.body.selectionStart, mail.body.selectionEnd, 'end'); mail.body.focus(); mail.edited.add('mailBody'); };
+        mail.values.replaceChildren(...PLACEHOLDERS.filter(([name]) => values[name]).map(([name, what, text]) => h('button', { class: 'token token--palette', type: 'button', draggable: 'true',
+          title: `${what}: ${values[name]}. Arrástralo al mensaje o haz clic para insertarlo`, onclick: () => put(values[name]), ondragstart: e => { e.dataTransfer.setData('text/plain', values[name]); e.dataTransfer.effectAllowed = 'copy'; } },
+          text, h('span', { class: 'token__value' }, values[name]))));
+      };
       const f = h('form', { class: 'card section', onsubmit: async e => {
         e.preventDefault();
         const d = new FormData(f), keep = (name, old) => { const file = d.get(name); return file && file.size ? file : old || null; };
@@ -153,6 +192,7 @@ export const pedidos = {
         } else { client = clients.find(x => x.id === d.get('client')); partyName = client.name; }
         // Amounts are typed with thousands separators, so the browser can't validate them: check them here.
         const quantity = parseAmount(d.get('quantity')), unitPrice = parseAmount(d.get('unitPrice'));
+        if (seller && !sells(seller, d.get('material'))) return fail(`${seller.name} no tiene registrado ${d.get('material')}. Elige otro proveedor o agrégale ese material en Proveedores.`);
         if (!(quantity > 0)) return fail('Escribe una cantidad mayor a 0.');
         if (!(unitPrice >= 0)) return fail('Escribe un precio por unidad válido.');
         const record = {
@@ -165,20 +205,28 @@ export const pedidos = {
         if (type === 'salida') { const hit = pickedSource(); Object.assign(record, { supplierId: hit ? hit[0].id : null, supplierName: hit ? hit[0].name : '', unitCost: unitCostNow() }); }
         if (type === 'salida') Object.assign(record, client ? { origin: from, dest: client.city || '', address: clientAddress(client) } : { origin: rec.origin || '', dest: rec.dest || '', address: rec.address || '' });
         // "Guardar y Factura": the invoice is generated from the sale and stored as its Factura (replacing a chosen file).
+        // "Enviar": the order is saved and its message handed to the mail program.
+        const sending = mail && e.submitter && e.submitter.value === 'send';
+        if (sending) {
+          if (!isEmail(mail.to.value)) { mail.to.focus(); return fail(seller && !seller.email ? `${seller.name} no tiene correo registrado. Escríbelo en "Para" o agrégalo en Proveedores.` : 'Escribe el correo del proveedor en "Para".'); }
+          if (!mail.subject.value.trim() || !mail.body.value.trim()) return fail('El correo necesita asunto y mensaje.');
+          record.mail = { to: mail.to.value.trim(), subject: mail.subject.value.trim(), sentAt: new Date().toISOString() };
+        } else if (rec.mail) record.mail = rec.mail;
         const invoicing = e.submitter && e.submitter.value === 'invoice';
         if (invoicing) record.invoice = buildInvoice(record, client ? { ...client, address: clientAddress(client) } : null);
         const big = [record.payment, record.invoice].find(file => file && file.size > MAX_FILE_MB * 1048576);
         if (big) return fail(`"${big.name}" pesa más de ${MAX_FILE_MB} MB. Elige un archivo más ligero.`);
         try { if (created) await saveClient(created); await saveMovement(record); } catch { return fail('No se pudo guardar. Revisa el espacio disponible del navegador e inténtalo de nuevo.'); }
         if (invoicing) openFile(record.invoice);
+        if (sending) sendMail({ to: record.mail.to, subject: record.mail.subject, body: mail.body.value });
         await reload();
       } },
         h('div', { class: 'section__title' }, `${rec.id ? k.edit : k.add} · ${rec.folio || nextFolio()}`),
-        h('div', { class: 'form__grid', oninput: updateTotal, onchange: e => { const name = e.target.name; if (name === 'material' && source) listSources(); if (name === 'material' || name === 'unit') suggest(true); updateTotal(); } },
+        h('div', { class: 'form__grid', oninput: () => { updateTotal(); refreshMail(); }, onchange: e => { const name = e.target.name; if (name === 'material' && source) listSources(); if (name === 'material' && supplier) supplier.list(e.target.value); if (name === 'material' || name === 'unit') suggest(true); updateTotal(); refreshMail(); } },
           label('Fecha', input({ type: 'date', name: 'date', value: rec.date || today(), required: true })),
           label('Materia prima', materialSelect),
           party,
-          ...(source ? [label('Proveedor del material', [source, h('span', { class: 'lbl__hint' }, 'Quién lo surte. Se propone el más barato que lo vende.')], 'span2'),
+          ...(source ? [label('Proveedor del material', [source, h('span', { class: 'lbl__hint' }, `Quién lo surte en ${from}. Se propone el más barato que lo vende.`)], 'span2'),
             h('div', { class: 'lbl' }, 'Costo del proveedor', sourceCost), h('div', { class: 'lbl' }, 'Profit de la salida', gain)] : []),
           label('Cantidad', amountInput({ class: 'input', name: 'quantity', value: rec.quantity ?? '', placeholder: '0', required: true }, 3)),
           label('Unidad', h('select', { class: 'input', name: 'unit' }, UNITS.map(u => h('option', { value: u, selected: u === rec.unit }, u)))),
@@ -188,19 +236,28 @@ export const pedidos = {
           fileField('Factura', 'invoice', rec.invoice),
           label('Notas', input({ name: 'notes', value: rec.notes || '', placeholder: 'Opcional' }), 'span2'),
         ),
+        mail ? h('div', { class: 'mailbox', oninput: e => { mail.edited.add(e.target.name); }, ondrop: e => { if (e.target === mail.body) mail.edited.add('mailBody'); } },
+          h('div', { class: 'mailbox__head' }, h('div', { class: 'section__title' }, 'Correo al proveedor'),
+            h('button', { class: 'link-btn', type: 'button', title: 'Vuelve a escribir el correo con la plantilla y los datos de la orden', onclick: () => { mail.edited.clear(); refreshMail(); } }, 'Restablecer desde la plantilla')),
+          h('div', { class: 'form__grid' }, label('Para', mail.to, 'span2'), label('Asunto', mail.subject, 'span2'),
+            h('div', { class: 'lbl span4' }, 'Datos de la orden', mail.values, h('span', { class: 'lbl__hint' }, 'Arrastra un dato al mensaje, o haz clic para insertarlo donde está el cursor.')),
+            label('Mensaje', mail.body, 'span4')),
+          h('div', { class: 'lbl__hint' }, 'Se arma con la plantilla y los datos de arriba; puedes ajustarlo para esta orden. ', h('a', { href: '#ajustes' }, 'Editar la plantilla'), '.')) : null,
         error,
-        h('div', { class: 'toolbar' }, h('button', { class: 'btn-primary', type: 'submit' }, 'Guardar'),
+        h('div', { class: 'toolbar' }, mail ? h('button', { class: 'btn-primary', type: 'submit', value: 'send', title: 'Guarda la orden y abre tu correo con el mensaje listo para el proveedor' }, 'Enviar') : h('button', { class: 'btn-primary', type: 'submit' }, 'Guardar'),
+          mail ? h('button', { class: 'btn-small', type: 'submit', value: 'save', title: 'Guarda la orden sin mandar el correo' }, 'Guardar sin enviar') : null,
           type === 'salida' ? h('button', { class: 'btn-success', type: 'submit', value: 'invoice', title: 'Guarda la salida, genera su factura y la abre' }, 'Guardar y Factura') : null,
           h('button', { class: 'btn-small', type: 'button', onclick: () => { editing = null; draw(); } }, 'Cancelar')),
       );
       listMaterials(supplier && supplier.current());
       if (source) listSources(rec.supplierId || undefined);
-      suggest(false); updateTotal();
+      suggest(false); updateTotal(); refreshMail();
       return f;
     };
 
     const fileCell = (file, text) => file ? h('button', { class: 'link-btn', title: file.name, onclick: () => openFile(file) }, text) : badge('Pendiente');
-    const partyCell = r => type === 'salida' && r.dest ? [h('div', null, r.party), h('div', { class: 'item__sub', title: r.address || null }, `${r.origin} → ${r.dest}`)] : r.party;
+    const partyCell = r => type === 'salida' ? (r.dest ? [h('div', null, r.party), h('div', { class: 'item__sub', title: r.address || null }, `${r.origin} → ${r.dest}`)] : r.party)
+      : [h('div', null, r.party), r.mail ? h('div', { class: 'item__sub', title: r.mail.subject }, `Enviada a ${r.mail.to} · ${new Date(r.mail.sentAt).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}`) : h('div', { class: 'item__sub' }, 'Sin enviar')];
     // A sale also shows the supplier the material came from with its cost, and what the sale left.
     const materialCell = r => [h('div', { class: 'table__strong' }, r.material), type === 'salida' && r.supplierName ? h('div', { class: 'item__sub' }, `${r.supplierName}${r.unitCost != null ? ` · costo ${unitMoney(r.unitCost)}` : ''}`) : null];
     const totalCell = r => { const profit = type === 'salida' && r.unitCost != null ? amount(r) - r.quantity * r.unitCost : null;
@@ -220,7 +277,7 @@ export const pedidos = {
       const ins = all.filter(r => r.type === 'entrada'), outs = all.filter(r => r.type === 'salida'), rows = type === 'entrada' ? ins : outs, k = KIND[type];
       actions.replaceChildren(editing ? '' : h('button', { class: 'btn-primary', onclick: () => { editing = {}; draw(); } }, k.add));
       body.replaceChildren(
-        stats([[money(sum(ins)), `Compras · ${ins.length} ${ins.length === 1 ? 'entrada' : 'entradas'}`], [money(sum(outs)), `Ventas · ${outs.length} ${outs.length === 1 ? 'salida' : 'salidas'}`], [money(sum(outs) - sum(ins)), 'Balance (ventas − compras)'], [all.filter(r => !r.payment || !r.invoice).length, 'Con comprobantes pendientes']]),
+        stats([[money(sum(ins)), `Compras · ${ins.length} OC`], [money(sum(outs)), `Ventas · ${outs.length} ${outs.length === 1 ? 'salida' : 'salidas'}`], [money(sum(outs) - sum(ins)), 'Balance (ventas − compras)'], [all.filter(r => !r.payment || !r.invoice).length, 'Con comprobantes pendientes']]),
         h('div', { class: 'chips' }, Object.entries(KIND).map(([key, v]) => h('button', { class: 'chipbtn' + (key === type ? ' is-on' : ''), onclick: () => { type = key; editing = null; confirming = null; draw(); } }, v.tab))),
         ...(editing ? [form(editing)] : []),
         card(rows.length ? h('div', { class: 'table__wrap' }, table(rows)) : empty(k.empty)),

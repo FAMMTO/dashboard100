@@ -75,7 +75,7 @@ export const catalogo = {
         h('td', { class: 'table__actions' }, confirming === m.id
           ? [h('button', { class: 'link-btn link-btn--danger', onclick: async () => { await deleteMaterial(m.id); await reload(); } }, 'Confirmar'), h('button', { class: 'link-btn', onclick: () => { confirming = null; draw(); } }, 'Cancelar')]
           : [h('button', { class: 'link-btn', onclick: () => { editing = m; confirming = null; draw(); body.scrollTop = 0; } }, 'Editar'),
-            h('button', { class: 'link-btn link-btn--danger', title: used ? 'Sus entradas y salidas se conservan con el nombre del material' : null, onclick: () => { confirming = m.id; draw(); } }, 'Eliminar')])); })));
+            h('button', { class: 'link-btn link-btn--danger', title: used ? 'Sus órdenes de compra y salidas se conservan con el nombre del material' : null, onclick: () => { confirming = m.id; draw(); } }, 'Eliminar')])); })));
 
     const draw = () => {
       const priced = items.filter(m => m.salePerTon > 0), margins = priced.map(m => margin(m).pct);

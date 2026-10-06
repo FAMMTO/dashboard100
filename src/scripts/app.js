@@ -46,7 +46,7 @@ function setBranch(b) {
   const switched = branch && branch !== b;
   branch = b;
   moduleState.reportScope = b.id; // the reports page follows the branch picked here
-  if (switched && ['reportes', 'almacen', 'chat', 'clientes'].includes(currentView())) showView(); // pages that show the branch's own figures
+  if (switched && ['reportes', 'almacen', 'chat', 'clientes', 'proveedores', 'pedidos'].includes(currentView())) showView(); // pages that show the branch's own figures
   store.set('wt-branch', b.id);
   $('branch-name').textContent = b.name;
   [...$('branch-menu').children].forEach(item => {

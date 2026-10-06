@@ -1,5 +1,5 @@
 // "Proveedores" page: who the company buys material from. Each supplier sells one or more materials of the
-// catalogue and sets its own price for each; a purchase (entrada) in Pedidos starts from that price.
+// catalogue and sets its own price for each; a purchase order (OC) in Pedidos starts from that price.
 import { getSuppliers, saveSupplier, deleteSupplier, getCatalog, getMovements } from './data.js';
 import { h, card, stats, empty, label, input, amountInput, parseAmount, unitMoney } from './ui.js';
 import { newId } from './clientes.js';
@@ -10,11 +10,14 @@ const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 const REMOVE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
 
 /** Name of a material a supplier sells: the catalogue's current one, or the one it had if it is no longer there. */
+/** Whether a supplier delivers to a branch (by id). One saved before branches could be chosen delivers to all of them. */
+export const deliversTo = (supplier, branchId) => !branchId || !Array.isArray(supplier.branches) || supplier.branches.includes(branchId);
+
 export const offerName = (offer, catalog) => (catalog.find(m => m.id === offer.materialId) || offer).name;
 
 export const proveedores = {
   title: 'Proveedores', sub: 'A quién se le compra material. Cada proveedor vende uno o más materiales y pone su propio precio.', preview: false,
-  async render({ body, actions }) {
+  async render({ body, actions, branches, branch }) {
     let suppliers, catalog, moves;
     try { [suppliers, catalog, moves] = await Promise.all([getSuppliers(), getCatalog(), getMovements()]); }
     catch { body.replaceChildren(empty('No se pudo abrir el almacenamiento de este navegador, así que no es posible guardar proveedores aquí.')); return; }
@@ -48,8 +51,10 @@ export const proveedores = {
         if (materials.some(o => !(o.pricePerTon > 0))) return fail('Cada material necesita un precio por tonelada mayor a 0.');
         if (new Set(materials.map(o => o.materialId)).size < materials.length) return fail('Hay un material repetido: deja una sola línea por material.');
         if (suppliers.some(x => x.id !== s.id && same(x.name, name))) return fail(`Ya existe un proveedor llamado "${name}".`);
+        const delivers = d.getAll('branch');
+        if (!delivers.length) return fail('Marca al menos una sucursal a la que entrega este proveedor.');
         const get = key => d.get(key).trim();
-        try { await saveSupplier({ ...s, id: s.id || newId(), name, rfc: get('rfc').toUpperCase(), contact: get('contact'), phone: get('phone'), email: get('email'), city: get('city'), notes: get('notes'), materials }); }
+        try { await saveSupplier({ ...s, id: s.id || newId(), name, rfc: get('rfc').toUpperCase(), contact: get('contact'), phone: get('phone'), email: get('email'), city: get('city'), notes: get('notes'), materials, branches: delivers }); }
         catch { return fail('No se pudo guardar. Revisa el espacio disponible del navegador e inténtalo de nuevo.'); }
         await reload();
       } },
@@ -62,6 +67,9 @@ export const proveedores = {
           label('Teléfono', input({ name: 'phone', type: 'tel', value: s.phone || '', placeholder: '81 0000 0000' })),
           label('Correo', input({ name: 'email', type: 'email', value: s.email || '', placeholder: 'ventas@proveedor.mx' })),
           label('Notas', input({ name: 'notes', value: s.notes || '', placeholder: 'Condiciones de pago, horarios… (opcional)' })),
+          h('fieldset', { class: 'checkgroup span4' }, h('legend', null, 'Sucursales a las que entrega'),
+            h('div', { class: 'checks' }, branches.map(b => h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'branch', value: b.id, checked: deliversTo(s, b.id) }), h('span', null, b.city)))),
+            h('div', { class: 'lbl__hint' }, 'En Pedidos solo aparece en las sucursales marcadas.')),
           h('div', { class: 'lbl span4' }, 'Materiales que vende y su precio',
             catalog.length ? [offers, h('div', null, h('button', { class: 'btn-small', type: 'button', onclick: () => { const row = offerRow(); offers.append(row); row.querySelector('select').focus(); } }, '＋ Agregar material'))]
               : h('div', { class: 'lbl__hint' }, 'El catálogo está vacío: agrega primero los materiales en Catálogo.'))),
@@ -71,23 +79,25 @@ export const proveedores = {
     };
 
     const table = () => h('table', { class: 'table' },
-      h('thead', null, h('tr', null, ['Proveedor', 'Contacto', 'Materiales y precio por tonelada', 'Entradas', 'Total comprado', ''].map(t => h('th', null, t)))),
+      h('thead', null, h('tr', null, ['Proveedor', 'Contacto', 'Materiales y precio por tonelada', 'Entrega en', 'OC', 'Total comprado', ''].map(t => h('th', null, t)))),
       h('tbody', null, suppliers.map(s => { const bought = purchasesOf(s); return h('tr', null,
         h('td', null, h('div', { class: 'table__strong' }, s.name), h('div', { class: 'item__sub' }, [s.rfc ? `RFC ${s.rfc}` : 'Sin RFC', s.city].filter(Boolean).join(' · '))),
         h('td', null, h('div', null, s.contact || '—'), h('div', { class: 'item__sub' }, [s.phone, s.email].filter(Boolean).join(' · ') || 'Sin datos de contacto')),
         h('td', { class: 'table__text' }, h('div', { class: 'tags' }, s.materials.map(o => h('span', { class: 'tag', title: `${unitMoney(o.pricePerTon / KG_PER_TON)} por kilo` }, h('strong', null, offerName(o, catalog)), ' ' + unitMoney(o.pricePerTon))))),
+        h('td', null, h('div', { class: 'tags' }, branches.every(b => deliversTo(s, b.id)) ? h('span', { class: 'tag' }, 'Todas las sucursales')
+          : branches.filter(b => deliversTo(s, b.id)).map(b => h('span', { class: 'tag' + (branch && b.id === branch.id ? ' tag--here' : '') }, b.city)))),
         h('td', null, String(bought.length)), h('td', { class: 'table__strong' }, money(bought.reduce((a, r) => a + r.quantity * r.unitPrice, 0))),
         h('td', { class: 'table__actions' }, confirming === s.id
           ? [h('button', { class: 'link-btn link-btn--danger', onclick: async () => { await deleteSupplier(s.id); await reload(); } }, 'Confirmar'), h('button', { class: 'link-btn', onclick: () => { confirming = null; draw(); } }, 'Cancelar')]
           : [h('button', { class: 'link-btn', onclick: () => { editing = s; confirming = null; draw(); body.scrollTop = 0; } }, 'Editar'),
-            h('button', { class: 'link-btn link-btn--danger', title: bought.length ? 'Sus entradas se conservan con el nombre del proveedor' : null, onclick: () => { confirming = s.id; draw(); } }, 'Eliminar')])); })));
+            h('button', { class: 'link-btn link-btn--danger', title: bought.length ? 'Sus órdenes de compra se conservan con el nombre del proveedor' : null, onclick: () => { confirming = s.id; draw(); } }, 'Eliminar')])); })));
 
     const draw = () => {
       const offered = new Set(suppliers.flatMap(s => s.materials.map(o => o.materialId))), buys = moves.filter(r => r.type === 'entrada');
       actions.replaceChildren(editing ? '' : h('button', { class: 'btn-primary', onclick: () => { editing = {}; draw(); } }, 'Nuevo proveedor'));
       body.replaceChildren(
-        stats([[suppliers.length, 'Proveedores'], [`${[...offered].filter(id => catalog.some(m => m.id === id)).length} de ${catalog.length}`, 'Materiales del catálogo con proveedor'],
-          [buys.length, 'Entradas registradas'], [money(buys.reduce((a, r) => a + r.quantity * r.unitPrice, 0)), 'Total comprado']]),
+        stats([[branch ? `${suppliers.filter(x => deliversTo(x, branch.id)).length} de ${suppliers.length}` : suppliers.length, branch ? `Proveedores que entregan en ${branch.city}` : 'Proveedores'], [`${[...offered].filter(id => catalog.some(m => m.id === id)).length} de ${catalog.length}`, 'Materiales del catálogo con proveedor'],
+          [buys.length, 'Órdenes de compra (OC)'], [money(buys.reduce((a, r) => a + r.quantity * r.unitPrice, 0)), 'Total comprado']]),
         ...(editing ? [form(editing)] : []),
         card(suppliers.length ? h('div', { class: 'table__wrap' }, table()) : empty('Aún no hay proveedores. Usa "Nuevo proveedor" para registrar el primero.')));
     };

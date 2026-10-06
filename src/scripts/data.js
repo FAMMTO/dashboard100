@@ -387,7 +387,7 @@ export async function getAlerts() {
   ];
 }
 
-// ---- costs: material arrivals (entradas) and sales (salidas) ----
+// ---- movements: purchase orders (type 'entrada', shown as OC) and sales (salidas) ----
 // Records are kept in this browser's IndexedDB, receipts included, until there is a real database.
 // Replace the four functions below with API calls; the "Pedidos" page only uses these.
 // Record: { id, type: 'entrada' | 'salida', folio, date: 'YYYY-MM-DD', material, party, quantity, unit, unitPrice,
@@ -472,15 +472,16 @@ export async function deleteMaterial(id) {
 }
 
 // ---- suppliers: who the material is bought from, and the price each one sets ----
-// Supplier: { id, name, rfc, contact, phone, email, city, notes, materials: [{ materialId, name, pricePerTon }] }
+// Supplier: { id, name, rfc, contact, phone, email, city, notes, materials: [{ materialId, name, pricePerTon }],
+//             branches: string[] (ids of the branches it delivers to; missing = all of them) }
 // A supplier sells one or more materials of the catalogue (materialId), each at its own price per tonne; `name`
 // keeps the material's name in case it is later removed from the catalogue.
 const offer = (index, pricePerTon) => ({ materialId: STARTING_CATALOG[index].id, name: STARTING_CATALOG[index].name, pricePerTon });
 const STARTING_SUPPLIERS = [
   { id: 'prov-0001', name: 'Recicladora del Norte', rfc: 'RNO120514KD7', contact: 'Sergio Garza', phone: '81 8345 1200', email: 'ventas@recinorte.mx', city: 'Monterrey', notes: 'Pago a 15 días.',
-    materials: [offer(0, 2650), offer(1, 3400), offer(5, 8700)] }, // cartón, madera, PET
+    materials: [offer(0, 2650), offer(1, 3400), offer(5, 8700)], branches: ['mty', 'gdl'] }, // cartón, madera, PET
   { id: 'prov-0002', name: 'Metales Monterrey', rfc: 'MMO080221PQ3', contact: 'Daniela Cavazos', phone: '81 8190 4455', email: 'compras@metalesmty.mx', city: 'San Nicolás de los Garza', notes: '',
-    materials: [offer(2, 14200), offer(3, 37500), offer(4, 163000)] }, // acero, aluminio, cobre
+    materials: [offer(2, 14200), offer(3, 37500), offer(4, 163000)], branches: ['mty'] }, // acero, aluminio, cobre
 ];
 
 /** Every supplier, by name. */
