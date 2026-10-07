@@ -63,7 +63,8 @@ export const orderProfit = s => s.sale - s.cost;
 
 /** Branches for the picker in the top bar; the first one is the default. */
 export async function getBranches() {
-  return BRANCHES;
+  // Sales and profit of each branch's dashboard card are those of its report (last 7 days), so both always agree.
+  return BRANCHES.map(b => { const r = REPORTS[b.id], sales = r.sales.reduce((a, v) => a + v, 0); return { ...b, kpis: { ...b.kpis, sales, profit: sales - r.cost } }; });
 }
 
 /** Shipments for the "Envíos recientes" table. */

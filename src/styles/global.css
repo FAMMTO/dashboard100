@@ -12,6 +12,7 @@ html, body { margin: 0; padding: 0; background: var(--bg); overflow: hidden; }
 a { color: var(--blue); text-decoration: none; }
 a:hover { color: #1a44bd; }
 button { font: inherit; color: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 @keyframes wtpulse {
   0% { box-shadow: 0 0 0 0 rgba(24, 169, 87, .5); }
@@ -30,7 +31,26 @@ button { font: inherit; color: inherit; }
   --sbw: 216px; /* side menu width; panels on the left are offset by it */
 }
 .app.is-collapsed { --sbw: 72px; }
-.scene { position: absolute; inset: 0; }
+.scene { position: absolute; inset: 0; overflow: hidden; } /* clips the vehicle tag when its vehicle leaves the view */
+
+/* ---- loading screen (start-up) ---- */
+.splash {
+  position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: radial-gradient(circle at 50% 38%, #f5f8fd, var(--bg) 70%); color: var(--ink);
+  transition: opacity .5s ease, visibility 0s .5s;
+}
+.splash.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
+.splash__logo { animation: splash-float 1.8s ease-in-out infinite; }
+.splash__wave { stroke-dasharray: 60; stroke-dashoffset: 60; animation: splash-draw 1.1s cubic-bezier(.4, 0, .2, 1) forwards; }
+.splash__wave--inner { animation-delay: .18s; }
+.splash__name { font-size: 30px; font-weight: 800; letter-spacing: -.6px; }
+.splash__bar { width: 180px; height: 4px; border-radius: 2px; background: #d6deeb; overflow: hidden; }
+.splash__fill { width: 40%; height: 100%; border-radius: 2px; background: var(--blue); animation: splash-slide 1.2s ease-in-out infinite; }
+.splash__text { font-size: 12px; font-weight: 600; color: var(--muted); }
+@keyframes splash-draw { to { stroke-dashoffset: 0; } }
+@keyframes splash-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes splash-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(260%); } }
+@media (prefers-reduced-motion: reduce) { .splash { transition: none; } .splash__logo, .splash__fill { animation: none; } .splash__wave { animation: none; stroke-dashoffset: 0; } .splash__fill { width: 100%; opacity: .5; } }
 
 /* ---- top bar ---- */
 .topbar {
@@ -150,6 +170,9 @@ button { font: inherit; color: inherit; }
 .kpi__value { font-size: 24px; font-weight: 800; }
 .kpi__delta { font-size: 12px; font-weight: 700; color: var(--green); }
 .kpi__sub { font-size: 11px; color: var(--muted); font-weight: 500; }
+.kpi__sub--gain { color: #12864a; font-weight: 700; }
+/* narrower windows: the four cards drop their icon so they do not run under the shipment card */
+@media (min-width: 961px) and (max-width: 1660px) { .kpi { width: auto !important; padding: 14px 16px; } .kpi__icon { display: none; } .kpis { gap: 10px; } }
 
 /* ---- map controls ---- */
 .mapctl { position: absolute; top: 194px; left: calc(var(--sbw) + 24px); display: flex; align-items: center; gap: 12px; transition: left .25s; }
@@ -164,11 +187,6 @@ button { font: inherit; color: inherit; }
 }
 .mapctl__btns button:hover { background: #eef3fd; }
 .mapctl__sep { height: 1px; background: #e6ebf2; }
-.mapctl__hint {
-  padding: 7px 12px; background: rgba(15, 27, 51, .78); color: #fff;
-  border-radius: 16px; font-size: 12px; font-weight: 600; align-self: flex-start;
-}
-
 /* ---- panels ---- */
 .panel {
   position: absolute; display: flex; flex-direction: column;
@@ -279,7 +297,7 @@ button { font: inherit; color: inherit; }
 /* ---- module pages (everything except the dashboard) ----
    Full pages: content on the left and, on the right, a live 3D preview with the selected vehicle's card. */
 .app { --pw: 400px; --ph: 280px; }
-.app:not([data-view="panel"]) :is(.kpis, .tracking, .recent, .mapctl__hint) { display: none; }
+.app:not([data-view="panel"]) :is(.kpis, .tracking, .recent) { display: none; }
 /* Forklifts carry no shipment to track: the card is wiped away from right to left, and wiped back in for a truck. */
 .app[data-kind="forklift"] .tracking {
   clip-path: inset(-60px calc(100% + 60px) -60px -60px); visibility: hidden; pointer-events: none;
@@ -680,7 +698,6 @@ button { font: inherit; color: inherit; }
   .kpis { gap: 10px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
   .kpi { flex-shrink: 0; }
   .mapctl, .app:not([data-view="panel"]) .mapctl { top: calc(var(--bar) + 10px); left: 10px; right: auto; }
-  .mapctl__hint { display: none; }
   .app[data-view="panel"] .shipment { padding: 18px 16px; gap: 14px; }
   .tracking { padding: 18px 14px 20px; }
   .app[data-kind="forklift"] .tracking { display: none; }

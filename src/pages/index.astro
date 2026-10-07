@@ -8,11 +8,22 @@ import "../styles/global.css";
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Panel DASH100</title>
+<meta name="description" content="Panel de operaciones DASH100: envíos, flota, almacén, rutas, pedidos, clientes y proveedores.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#2457e6">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
 <div class="app" data-view="panel">
+  <h1 class="sr-only">Panel DASH100</h1>
+  <div class="splash" id="splash" role="status" aria-live="polite">
+    <svg class="splash__logo" width="84" height="70" viewBox="0 0 34 28" fill="none" aria-hidden="true"><path class="splash__wave" d="M3 8c3 9 8 14 14 14S28 17 31 8" stroke="#2457e6" stroke-width="4" stroke-linecap="round"></path><path class="splash__wave splash__wave--inner" d="M9 6c2 6 5 9 8 9s6-3 8-9" stroke="#2457e6" stroke-width="4" stroke-linecap="round" opacity=".55"></path></svg>
+    <div class="splash__name">DASH100</div>
+    <div class="splash__bar"><div class="splash__fill"></div></div>
+    <div class="splash__text" id="splash-text">Iniciando el sistema…</div>
+  </div>
   <div id="scene" class="scene"></div>
 
   <div id="panels">
@@ -98,6 +109,14 @@ import "../styles/global.css";
         <div class="kpi__sub">vs. últimos 7 días</div>
       </div>
     </div>
+    <div class="kpi" style="width:262px">
+      <div class="kpi__icon"><svg width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#2457e6"></circle><path d="M14.8 9.3c-.5-.9-1.5-1.4-2.8-1.4-1.7 0-2.8.8-2.8 2 0 2.8 5.6 1.4 5.6 4.1 0 1.2-1.1 2.1-2.8 2.1-1.4 0-2.5-.6-3-1.6M12 6.2v1.7M12 16.1v1.7" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"></path></svg></div>
+      <div class="kpi__body">
+        <div class="kpi__label">Ventas</div>
+        <div class="kpi__row"><span class="kpi__value" id="k4" title="Vendido en los últimos 7 días">$0</span><span class="kpi__delta">↑ 8.4%</span></div>
+        <div class="kpi__sub kpi__sub--gain" id="k4-profit" title="Profit de esas ventas: lo vendido menos su costo">Profit $0</div>
+      </div>
+    </div>
   </div>
 
   <div class="mapctl">
@@ -108,7 +127,6 @@ import "../styles/global.css";
       <div class="mapctl__sep"></div>
       <button id="recenter" title="Centrar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2457e6" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg></button>
     </div>
-    <div class="mapctl__hint">Arrastra para explorar · Rueda para zoom · Clic en un vehículo</div>
   </div>
 
   <section class="panel shipment">

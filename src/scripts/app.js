@@ -27,6 +27,8 @@ function renderClock() {
   $('clock').textContent = `${d.getDate()} ${mon} ${d.getFullYear()} • ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+// Large amounts for the dashboard cards: $11.89 M, $845 mil.
+const compactPesos = n => Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)} M` : Math.abs(n) >= 1e3 ? `$${Math.round(n / 1e3)} mil` : `$${Math.round(n)}`;
 let kpiRun = 0;
 function animateKpis(kpis) {
   const t0 = performance.now(), run = ++kpiRun;
@@ -36,6 +38,8 @@ function animateKpis(kpis) {
     $('k1').textContent = Math.round(kpis.shipments * ek);
     $('k2').textContent = (kpis.onTime * ek).toFixed(1) + '%';
     $('k3').textContent = (kpis.hours * ek).toFixed(1) + ' h';
+    $('k4').textContent = compactPesos(kpis.sales * ek);
+    $('k4-profit').textContent = `Profit ${compactPesos(kpis.profit * ek)} · ${(kpis.profit / kpis.sales * 100).toFixed(1)}%`;
     if (k < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -318,7 +322,7 @@ initMobile();
 renderClock();
 setInterval(renderClock, 15000);
 getBranches().then(initBranches);
-getRecentShipments().then(buildRows).then(() => selectVehicle(selected));
+const firstData = getRecentShipments().then(buildRows).then(() => selectVehicle(selected));
 getAlerts().then(list => { alerts.push(...list); updateAlertBadges(); });
 
 initAlertsModal();
@@ -336,3 +340,22 @@ const fontsReady = document.fonts ? Promise.all([document.fonts.load('800 54px M
 const sceneReady = Promise.race([fontsReady, new Promise(r => setTimeout(r, 1500))]).catch(() => {}).then(initScene);
 const fleetReady = sceneReady.then(s => getFleet(s.vehicles));
 showView();
+
+// ---- loading screen: shown from the first paint until the 3D yard and the first data are on screen ----
+// It stays at least a moment (so it does not flash by on a fast start) and never longer than a few seconds, even
+// if something fails to load: the pages report their own errors.
+function initSplash() {
+  const splash = $('splash'), text = $('splash-text'), MIN_MS = 1100, MAX_MS = 9000, started = performance.now();
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    splash.classList.add('is-done');
+    setTimeout(() => splash.remove(), 700); // after the fade
+  };
+  sceneReady.then(() => { text.textContent = 'Cargando la operación…'; }, () => {});
+  Promise.allSettled([fleetReady, firstData]).then(() => new Promise(resolve => requestAnimationFrame(resolve))) // one frame drawn
+    .then(() => setTimeout(close, Math.max(0, MIN_MS - (performance.now() - started))));
+  setTimeout(close, MAX_MS);
+}
+initSplash();
