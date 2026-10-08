@@ -35,6 +35,7 @@ export async function askAgent(question, { fleet, alerts, branch }) {
     return `Tienes ${open.length} ${open.length === 1 ? 'alerta' : 'alertas'} sin leer:\n` + open.map(a => `• [${a.level}] ${a.title} — ${a.detail}`).join('\n');
   }
   if (/venta|profit|ganancia|costo|margen|ingreso|factur/.test(q)) {
+    if (branch && branch.hasData === false) return `La sucursal ${branch.name} es nueva y aún no tiene cifras de ventas.`;
     const t = (await getReports(branch ? branch.id : 'general')).totals;
     return `Últimos 7 días en ${where}:\n• Ventas: ${pesos(t.sales)}\n• Costo: ${pesos(t.cost)}\n• Profit: ${pesos(t.profit)} (margen ${(t.profit / t.sales * 100).toFixed(1)}%)\n• Envíos: ${t.shipments}, ${t.onTime}% a tiempo`;
   }

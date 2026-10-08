@@ -2,14 +2,15 @@
 // `preview: false` hides the 3D preview and vehicle card so the page uses the whole width.
 // ctx: { body, actions, fleet, state, branches, branch, select(vehicleId), flyTo(x, z, zoom), mark(), tip(event, text),
 //        config, saveConfig(), alerts, alertsChanged() } — see showView() in app.js.
-import { getRoutes, getWarehouse, getReports, getOnTime, getOnTimePeriods, orderProfit } from './data.js';
-import { h, badge, card, section, foldSection, stats, empty, pesos, label } from './ui.js';
+import { getRoutes, getWarehouse, getReports, getOnTime, getOnTimePeriods, orderProfit, getPurchases, getInventory, getUsers, saveUser, deleteUser, USER_ROLES, saveBranch, deleteBranch, getRouteCities } from './data.js';
+import { h, badge, card, section, foldedSection, stats, empty, pesos, label } from './ui.js';
 import { pedidos } from './pedidos.js';
-import { clientes } from './clientes.js';
+import { mensajes } from './mensajes.js';
+import { clientes, newId } from './clientes.js';
 import { catalogo } from './catalogo.js';
 import { proveedores } from './proveedores.js';
 import { askAgent, SUGGESTIONS } from './agent.js';
-import { getTemplate, saveTemplate, resetTemplate, fillTemplate, PLACEHOLDERS, PLACEHOLDER_LABELS } from './ocmail.js';
+import { getTemplate, saveTemplate, resetTemplate, fillTemplate, PLACEHOLDERS, PLACEHOLDER_LABELS, getMailServer, saveMailServer, SECURITY, isEmail } from './ocmail.js';
 import { tokenEditor, paletteToken } from './tokeneditor.js';
 
 const svg = (tag, attrs, ...kids) => {
@@ -31,20 +32,24 @@ const orderMoney = s => h('div', { class: 'item__money' }, moneyFact('Venta', s.
 const chips = (options, current, onPick) => h('div', { class: 'chips' }, options.map(o => h('button', { class: 'chipbtn' + (o === current ? ' is-on' : ''), onclick: () => onPick(o) }, o)));
 
 // ---- charts (single blue series; values are read from the axis and the hover tooltip) ----
-const BLUE = '#2457e6', GRID = '#eef1f6', MUTED = '#a9b4c7';
+// Tonnes with at most two decimals: 6.5 → "6.5 t".
+const tonnes = v => (Math.round(v * 100) / 100).toLocaleString('es-MX') + ' t';
+const BLUE = '#2457e6', GRID = '#eef1f6', MUTED = '#a9b4c7', GAIN = '#18a957';
 const STATUS_COLORS = { 'En tránsito': '#2457e6', 'En almacén': '#8a5cd6', 'Entregado': '#18a957' };
 
-function barChart({ width, labels, values, max, step, unit, label = v => `${v} ${unit}` }, tip) {
+// `second`: another value per label, drawn as a green bar beside the first; `label(v, i)` is the text of the tooltip.
+function barChart({ width, labels, values, second, max, step, unit, label = v => `${v} ${unit}` }, tip) {
   const H = 190, m = { l: 34, r: 8, t: 10, b: 24 }, pw = width - m.l - m.r, ph = H - m.t - m.b, band = pw / values.length;
   const y = v => m.t + ph - v / max * ph, root = svg('svg', { class: 'chart', viewBox: `0 0 ${width} ${H}`, height: H, role: 'img' });
   for (let t = 0; t <= max; t += step) root.append(svg('line', { x1: m.l, x2: width - m.r, y1: y(t), y2: y(t), stroke: GRID }), svg('text', { x: m.l - 8, y: y(t) + 4, 'text-anchor': 'end' }, String(t)));
   values.forEach((v, i) => {
-    const bw = Math.min(28, band * 0.5), x = m.l + band * i + (band - bw) / 2, top = y(v), r = 4;
-    const bar = svg('path', { d: `M${x},${y(0)}V${top + r}q0,-${r} ${r},-${r}h${bw - 2 * r}q${r},0 ${r},${r}V${y(0)}z`, fill: BLUE });
+    const gap = second ? 3 : 0, bw = second ? Math.min(20, band * 0.34) : Math.min(28, band * 0.5), x = m.l + band * i + (band - (second ? bw * 2 + gap : bw)) / 2, r = Math.min(4, bw / 2);
+    const shape = (left, value, fill) => { const top = Math.min(y(Math.max(value, 0)), y(0) - r); return svg('path', { d: `M${left},${y(0)}V${top + r}q0,-${r} ${r},-${r}h${bw - 2 * r}q${r},0 ${r},${r}V${y(0)}z`, fill }); };
+    const bar = shape(x, v, BLUE), other = second ? shape(x + bw + gap, second[i], GAIN) : null;
     const hit = svg('rect', { x: m.l + band * i, y: m.t, width: band, height: ph, fill: 'transparent' });
-    hit.addEventListener('mousemove', e => { bar.setAttribute('fill', '#1a44bd'); tip(e, `${labels[i]}: ${label(v)}`); });
+    hit.addEventListener('mousemove', e => { bar.setAttribute('fill', '#1a44bd'); tip(e, `${labels[i]}: ${label(v, i)}`); });
     hit.addEventListener('mouseleave', () => { bar.setAttribute('fill', BLUE); tip(null); });
-    root.append(bar, svg('text', { x: m.l + band * (i + 0.5), y: H - 6, 'text-anchor': 'middle' }, labels[i]), hit);
+    root.append(bar, other || '', svg('text', { x: m.l + band * (i + 0.5), y: H - 6, 'text-anchor': 'middle' }, labels[i]), hit);
   });
   return root;
 }
@@ -218,18 +223,29 @@ export const modules = {
   },
 
   almacen: {
-    title: 'Almacén', sub: 'Andenes, zonas e inventario. Selecciona un andén o zona para ubicarlo en el mapa.',
+    title: 'Almacén', sub: 'Andenes, zonas e inventario de los productos del catálogo. Selecciona un andén o zona para ubicarlo en el mapa.',
     async render({ body, flyTo, branch }) {
-      const { docks, zones, inventory } = await getWarehouse(branch && branch.id);
+      // Inventory: the products of the catalogue, with what the branch's purchase orders brought in minus what its sales took out.
+      const stock = await getInventory(branch && branch.id).catch(() => null);
+      const inventory = () => {
+        if (!stock) return section('Inventario por producto (toneladas)', empty('No se pudo abrir el almacenamiento de este navegador, así que no es posible calcular el inventario.'));
+        const top = Math.max(1, ...stock.map(p => p.stock));
+        return section('Inventario por producto (toneladas)',
+          stock.length ? stock.map(p => h('div', { class: 'hbar hbar--wide', title: `Entró ${tonnes(p.bought)} en órdenes de compra · salió ${tonnes(p.sold)} en ventas` },
+            h('div', null, p.name), meter(Math.max(0, p.stock) / top * 100), h('div', { class: 'hbar__value' + (p.stock < 0 ? ' is-loss' : '') }, h('span', { class: 'money__value' }, tonnes(p.stock)))))
+            : empty('El catálogo está vacío. Agrega productos en Catálogo.'),
+          h('div', { class: 'item__sub' }, 'Productos del Catálogo. Existencia = lo que entró con las órdenes de compra de la sucursal menos lo que salió en sus ventas.'));
+      };
+      if (branch && branch.hasData === false) { body.replaceChildren(card(empty(`${branch.name} es una sucursal nueva: aún no tiene andenes ni zonas registrados.`)), inventory()); return; }
+      const { docks, zones } = await getWarehouse(branch && branch.id);
       const free = docks.filter(d => d.status === 'Libre').length, used = zones.reduce((a, z) => a + z.used, 0), cap = zones.reduce((a, z) => a + z.capacity, 0);
-      const maxInv = Math.max(...inventory.map(i => i.pallets));
       body.replaceChildren(
-        stats([[docks.length, 'Andenes'], [free, 'Libres'], [Math.round(used / cap * 100) + '%', 'Ocupación'], [inventory.reduce((a, i) => a + i.pallets, 0), 'Tarimas']]),
+        stats([[docks.length, 'Andenes'], [free, 'Libres'], [Math.round(used / cap * 100) + '%', 'Ocupación'], [stock ? tonnes(stock.reduce((a, p) => a + p.stock, 0)) : '—', 'En inventario']]),
         section(branch ? `Andenes · ${branch.city}` : 'Andenes', h('div', { class: 'docks' }, docks.map(d => h('button', { class: 'dock', onclick: () => flyTo(d.x, d.z, 2.2) },
           h('div', { class: 'item__title' }, d.name), badge(d.status), h('div', { class: 'item__sub' }, d.detail))))),
         section('Zonas', h('div', { class: 'list' }, zones.map(z => h('button', { class: 'item item--zone', onclick: () => flyTo(z.x, z.z, z.zoom) },
           h('div', { class: 'item__title' }, z.name), meter(z.used / z.capacity * 100), h('div', { class: 'item__right' }, `${z.used} / ${z.capacity}`))))),
-        section('Inventario por categoría (tarimas)', inventory.map(i => h('div', { class: 'hbar' }, h('div', null, i.name), meter(i.pallets / maxInv * 100), h('div', { class: 'hbar__value' }, String(i.pallets))))),
+        inventory(),
       );
     },
   },
@@ -254,20 +270,32 @@ export const modules = {
     async render({ body, actions, tip, state, branches }) {
       // state.reportScope: a branch id or 'general' (every branch). It starts on the branch picked in the top bar.
       const draw = async () => {
-        const scope = state.reportScope || 'general', r = await getReports(scope), bars = h('div'), money = h('div'), onTime = onTimeCard(scope, state, tip, await getOnTimePeriods());
+        const scope = state.reportScope || 'general', r = await getReports(scope), bought = await getPurchases(scope), bars = h('div'), money = h('div'), onTime = onTimeCard(scope, state, tip, await getOnTimePeriods());
         if (scope !== (state.reportScope || 'general')) return; // another scope was picked while loading
         const pick = id => { state.reportScope = id; draw(); };
         actions.replaceChildren(h('div', { class: 'chips', role: 'group', 'aria-label': 'Sucursal del reporte' },
           h('button', { class: 'chipbtn chipbtn--all' + (scope === 'general' ? ' is-on' : ''), onclick: () => pick('general') }, 'Vista general'),
           branches.map(b => h('button', { class: 'chipbtn' + (b.id === scope ? ' is-on' : ''), onclick: () => pick(b.id) }, b.city))));
+        // Compras: how much material is being bought, from the purchase orders (OC) of Pedidos.
+        const compras = () => section('Compras · material comprado en los últimos 7 días',
+          stats([[tonnes(bought.totals.tons), 'Toneladas compradas'], [pesos(bought.totals.amount), 'Importe de compras'], [bought.totals.orders, 'Órdenes de compra'], [bought.totals.approved, 'Solicitudes aprobadas']]),
+          bought.materials.length
+            ? bought.materials.map(m => h('div', { class: 'hbar hbar--wide' }, h('div', null, m.name), meter(m.amount / bought.materials[0].amount * 100), h('div', { class: 'hbar__value' }, [...(m.tons ? [tonnes(m.tons)] : []), ...m.others, pesos(m.amount)].join(' · '))))
+            : empty('Aún no hay órdenes de compra en los últimos 7 días' + (scope === 'general' ? '.' : ' para esta sucursal.') + ' Regístralas en Pedidos con "Nueva OC".'),
+          h('div', { class: 'item__sub' }, 'Sale de las órdenes de compra (OC) registradas en Pedidos. Las barras comparan el importe de cada material.'));
+        // A branch added in Configuración has no figures of its own yet: only its purchases can be shown.
+        const own = branches.find(b => b.id === scope);
+        if (own && own.hasData === false) { body.replaceChildren(card(empty(`${own.name} es una sucursal nueva: aún no tiene envíos ni ventas que reportar.`)), compras()); return; }
         const t = r.totals, topSales = Math.max(...r.branches.map(b => b.sales)), allSales = r.branches.reduce((a, b) => a + b.sales, 0);
         body.replaceChildren(
           stats([[t.shipments, 'Envíos'], [t.onTime + '%', 'A tiempo'], [t.processingHours + ' h', 'Tiempo de proceso'], [t.incidents, 'Incidencias']]),
           stats([[pesos(t.sales), 'Ventas'], [pesos(t.cost), 'Costo'], [pesos(t.profit), 'Profit'], [(t.profit / t.sales * 100).toFixed(1) + '%', 'Margen']]),
-          h('div', { class: 'grid2' }, section('Ventas por día (miles de MXN)', money), section('Ventas por sucursal',
+          h('div', { class: 'grid2' }, section('Ventas y profit por día (miles de MXN)', money,
+            h('div', { class: 'legend' }, h('div', { class: 'legend__item' }, h('span', { class: 'legend__swatch', style: `background:${BLUE}` }), 'Ventas'), h('div', { class: 'legend__item' }, h('span', { class: 'legend__swatch', style: `background:${GAIN}` }), 'Profit (ventas − costo)'))), section('Ventas por sucursal',
             r.branches.map(b => h('button', { class: 'hbar hbar--pick' + (scope === 'general' || scope === b.id ? '' : ' is-muted'), title: `Ver reporte de ${b.name}`, onclick: () => pick(b.id) },
               h('div', null, b.name), meter(b.sales / topSales * 100), h('div', { class: 'hbar__value' }, millions(b.sales)))),
             h('div', { class: 'item__sub' }, scope === 'general' ? 'Selecciona una sucursal para ver su reporte.' : `${(t.sales / allSales * 100).toFixed(1)}% de las ventas de todas las sucursales.`))),
+          compras(),
           h('div', { class: 'grid2' }, section('Envíos por día', bars), onTime.el),
           h('div', { class: 'grid2' }, section('Envíos por estado',
             h('div', { class: 'stack' }, r.status.map(s => h('div', { class: 'stack__seg', style: `flex:${s.value};background:${STATUS_COLORS[s.name]}`, onmousemove: e => tip(e, `${s.name}: ${s.value}%`), onmouseleave: () => tip(null) }))),
@@ -276,7 +304,8 @@ export const modules = {
         );
         // The charts are drawn to the width their cards ended up with.
         const thousands = r.sales.map(v => Math.round(v / 1000));
-        money.append(barChart({ width: money.clientWidth || 480, labels: r.days, values: thousands, ...niceScale(Math.max(...thousands)), label: v => pesos(v * 1000) }, tip));
+        money.append(barChart({ width: money.clientWidth || 480, labels: r.days, values: thousands, second: r.profit.map(v => Math.round(v / 1000)), ...niceScale(Math.max(...thousands)),
+          label: (v, i) => `Ventas ${pesos(r.sales[i])} · Profit ${pesos(r.profit[i])} (margen ${(r.profit[i] / r.sales[i] * 100).toFixed(1)}%)` }, tip));
         bars.append(barChart({ width: bars.clientWidth || 480, labels: r.days, values: r.shipments, ...niceScale(Math.max(...r.shipments)), unit: 'envíos' }, tip));
         onTime.draw();
       };
@@ -284,7 +313,7 @@ export const modules = {
     },
   },
 
-  pedidos, clientes, proveedores, catalogo,
+  pedidos, mensajes, clientes, proveedores, catalogo,
 
   alertas: {
     title: 'Alertas', sub: 'Selecciona una alerta para ver dónde ocurre.',
@@ -306,15 +335,16 @@ export const modules = {
 
   ajustes: {
     title: 'Configuración', sub: 'Los cambios se aplican al instante y se guardan en este navegador.',
-    render({ body, config, saveConfig, resetConfig }) {
+    async render({ body, config, saveConfig, resetConfig, branches, branch, reloadBranches }) {
       const setting = (title, sub, control) => h('div', { class: 'setting' }, h('div', { class: 'setting__text' }, h('div', { class: 'item__title' }, title), h('div', { class: 'item__sub' }, sub)), h('div', { class: 'setting__control' }, control));
+      const block = (title, key, ...kids) => foldedSection(title, 'cfg-' + key, ...kids); // the contents of one tab: folded until it is opened, and it remembers it
       const toggle = key => { const b = h('button', { class: 'switch', role: 'switch', 'aria-checked': String(config[key]), onclick: () => { config[key] = !config[key]; b.setAttribute('aria-checked', String(config[key])); saveConfig(); } }); return b; };
       // Template of the e-mail a purchase order (OC) is sent with. The fields the order fills in show as boxes that
       // are dragged (or clicked) from the palette into the subject or the message. It is saved as it is edited; the
       // example under it shows how it reads with a sample order.
       const mailTemplate = () => {
         const t = getTemplate(), sample = { proveedor: 'Recicladora del Norte', contacto: 'Sergio Garza', material: 'Cartón', cantidad: '12', unidad: 'toneladas', precio: '$2,650.00 por tonelada', total: '$31,800.00', folio: 'OC-0001', fecha: '5 oct 2026', sucursal: 'Monterrey', notas: '' };
-        const preview = h('pre', { class: 'mailpreview' }), company = h('input', { class: 'input', value: t.company, placeholder: 'Nombre de la empresa' }), sender = h('input', { class: 'input', value: t.sender, placeholder: 'Nombre de quien firma' });
+        const preview = h('pre', { class: 'mailpreview' }), company = h('input', { class: 'input', value: t.company, placeholder: 'Nombre de la empresa', oninput: () => save() }), sender = h('input', { class: 'input', value: t.sender, placeholder: 'Nombre de quien firma' });
         const save = () => {
           const now = { company: company.value, sender: sender.value, subject: subject.getValue(), body: message.getValue() }, values = { ...sample, usuario: now.sender, empresa: now.company };
           saveTemplate(now);
@@ -324,27 +354,162 @@ export const modules = {
         let target = message; // the box a clicked field goes to: the last one of the two that was used
         subject.el.addEventListener('focus', () => { target = subject; }); message.el.addEventListener('focus', () => { target = message; });
         const fields = h('div', { class: 'form__grid', oninput: save },
-          label('Empresa (firma)', company, 'span2'), label('Quien envía (firma)', sender, 'span2'),
+          label('Quien envía (firma)', sender, 'span2'),
           h('div', { class: 'lbl span4' }, 'Asunto', subject.el),
           h('div', { class: 'lbl span4' }, 'Datos de la orden',
             h('div', { class: 'tokens' }, PLACEHOLDERS.map(([name, what, text]) => paletteToken(name, text, what, picked => target.insert(picked)))),
             h('span', { class: 'lbl__hint' }, 'Arrastra un dato al asunto o al mensaje, o haz clic para insertarlo donde está el cursor. Dentro del texto puedes moverlo arrastrándolo y quitarlo con la tecla de borrar.')),
           h('div', { class: 'lbl span4' }, 'Mensaje', message.el));
         save();
-        return foldSection('Correo de las órdenes de compra (OC)', 'oc-mail',
+        // The company's name is shown in the General block; it is saved with the template because the e-mails are signed with it.
+        return [company, block('Correo de las órdenes de compra (OC)', 'correo',
           h('div', { class: 'item__sub' }, 'Plantilla del mensaje que se envía al proveedor al dar "Enviar" en una OC. Cada dato en azul se sustituye con el de la orden.'),
           fields,
           h('div', { class: 'item__title' }, 'Así se ve con una orden de ejemplo'), preview,
-          h('div', null, h('button', { class: 'btn-small', onclick: () => { resetTemplate(); draw(); } }, 'Restablecer plantilla')));
+          h('div', null, h('button', { class: 'btn-small', onclick: () => { resetTemplate(); draw(); } }, 'Restablecer plantilla')))];
       };
+      // The account and outgoing server the e-mails are sent from. Saved as it is typed, except the password (see ocmail.js).
+      const mailServer = () => {
+        const s = getMailServer(), field = (name, attrs) => h('input', { class: 'input', name, value: s[name] ?? '', autocomplete: 'off', ...attrs });
+        const status = h('div', { class: 'lbl__hint span4' });
+        const security = h('select', { class: 'input', name: 'security' }, SECURITY.map(([id, text]) => h('option', { value: id, selected: id === s.security }, text)));
+        const port = field('port', { type: 'number', min: 1, max: 65535, inputmode: 'numeric', placeholder: '587' });
+        const grid = h('div', { class: 'form__grid',
+          onchange: e => { if (e.target === security) { port.value = SECURITY.find(([id]) => id === security.value)[2]; save(); } },
+          oninput: () => save() },
+          label('Dominio', [field('domain', { placeholder: 'tuempresa.mx' }), h('span', { class: 'lbl__hint' }, 'El dominio de tus correos.')], 'span2'),
+          label('Correo remitente', [field('fromEmail', { type: 'email', placeholder: 'compras@tuempresa.mx' }), h('span', { class: 'lbl__hint' }, 'La dirección desde la que salen las órdenes.')], 'span2'),
+          label('Nombre del remitente', field('fromName', { placeholder: 'Compras · Tu Empresa' }), 'span2'),
+          label('Responder a', [field('replyTo', { type: 'email', placeholder: 'Opcional' }), h('span', { class: 'lbl__hint' }, 'A dónde llegan las respuestas, si no es al remitente.')], 'span2'),
+          label('Servidor de salida (SMTP)', field('host', { placeholder: 'smtp.tuempresa.mx' }), 'span2'),
+          label('Seguridad', security),
+          label('Puerto de salida', port),
+          label('Usuario', [field('user', { placeholder: 'compras@tuempresa.mx' }), h('span', { class: 'lbl__hint' }, 'Casi siempre es el correo completo.')], 'span2'),
+          label('Contraseña', [h('input', { class: 'input', type: 'password', name: 'password', autocomplete: 'new-password', placeholder: 'Contraseña o clave de aplicación' }),
+            h('span', { class: 'lbl__hint' }, 'No se guarda en este navegador: se registrará en el servidor cuando el envío esté conectado.')], 'span2'),
+          status);
+        const save = () => {
+          const now = Object.fromEntries(['domain', 'fromEmail', 'fromName', 'replyTo', 'host', 'user'].map(name => [name, grid.querySelector(`[name="${name}"]`).value.trim()]));
+          saveMailServer({ ...now, port: Number(port.value) || 587, security: security.value });
+          const missing = [[now.fromEmail, 'correo remitente'], [now.host, 'servidor de salida'], [now.user, 'usuario']].filter(([value]) => !value).map(([, name]) => name);
+          status.textContent = now.fromEmail && !isEmail(now.fromEmail) ? 'El correo remitente no parece una dirección válida.'
+            : now.replyTo && !isEmail(now.replyTo) ? 'El correo de "Responder a" no parece una dirección válida.'
+            : missing.length ? `Falta: ${missing.join(', ')}.` : 'Datos de la cuenta completos y guardados.';
+        };
+        save();
+        return block('Cuenta y servidor de correo', 'servidor',
+          h('div', { class: 'item__sub' }, 'La cuenta desde la que se enviarán los correos. Tu proveedor de correo te da el servidor, el puerto y el tipo de seguridad.'),
+          grid,
+          h('div', { class: 'module__note' }, 'El envío directo aún no está conectado: por ahora "Enviar" en una OC abre tu programa de correo con el mensaje listo. Estos datos quedan listos para cuando se conecte.'));
+      };
+      // Users: a directory with the role of each one, kept in this browser. `users` is null if the storage can't be opened.
+      let users = await getUsers().catch(() => null), editingUser = null, confirmingUser = null; // editingUser: the user in the form ({} for a new one)
+      const reloadUsers = async () => { users = await getUsers(); editingUser = null; confirmingUser = null; draw(); };
+      const branchName = id => { const b = (branches || []).find(x => x.id === id); return b ? b.city : 'Todas las sucursales'; };
+      const userForm = u => {
+        const error = h('div', { class: 'form__error', hidden: true }), fail = text => { error.textContent = text; error.hidden = false; };
+        const text = (name, attrs) => h('input', { class: 'input', name, value: u[name] || '', autocomplete: 'off', ...attrs });
+        const pick = (name, options, chosen) => h('select', { class: 'input', name, required: name === 'role' }, options.map(([value, shown]) => h('option', { value, selected: value === chosen }, shown)));
+        const f = h('form', { class: 'userform', onsubmit: async e => {
+          e.preventDefault();
+          const d = new FormData(f), get = key => String(d.get(key) || '').trim();
+          const user = { ...u, id: u.id || newId(), name: get('name'), role: get('role'), email: get('email'), phone: get('phone'), branchId: get('branchId'), active: get('active') === 'si' };
+          if (user.email && users.some(x => x.id !== user.id && x.email && x.email.toLowerCase() === user.email.toLowerCase())) return fail(`Ya hay un usuario con el correo ${user.email}.`);
+          try { await saveUser(user); } catch { return fail('No se pudo guardar. Revisa el espacio disponible del navegador e inténtalo de nuevo.'); }
+          await reloadUsers();
+        } },
+          h('div', { class: 'item__title' }, u.id ? `Editar usuario · ${u.name}` : 'Nuevo usuario'),
+          h('div', { class: 'form__grid' },
+            label('Nombre completo', text('name', { placeholder: 'Nombre y apellidos', required: true }), 'span2'),
+            label('Rol', pick('role', [['', 'Selecciona…'], ...USER_ROLES.map(r => [r, r]), ...(u.role && !USER_ROLES.includes(u.role) ? [[u.role, u.role]] : [])], u.role || ''), 'span2'),
+            label('Correo', text('email', { type: 'email', placeholder: 'correo@empresa.mx' }), 'span2'),
+            label('Teléfono', text('phone', { type: 'tel', placeholder: '81 0000 0000' }), 'span2'),
+            label('Sucursal', pick('branchId', [['', 'Todas las sucursales'], ...(branches || []).map(b => [b.id, b.city])], u.branchId || ''), 'span2'),
+            label('Estado', pick('active', [['si', 'Activo'], ['no', 'Inactivo']], u.active === false ? 'no' : 'si'), 'span2')),
+          error,
+          h('div', { class: 'toolbar' }, h('button', { class: 'btn-primary', type: 'submit' }, 'Guardar'), h('button', { class: 'btn-small', type: 'button', onclick: () => { editingUser = null; draw(); } }, 'Cancelar')));
+        return f;
+      };
+      const userRow = u => setting(u.name, [u.role || 'Sin rol', branchName(u.branchId), u.email, u.phone].filter(Boolean).join(' · '), [
+        badge(u.active === false ? 'Inactivo' : 'Activo'),
+        ...(confirmingUser === u.id
+          ? [h('button', { class: 'link-btn link-btn--danger', onclick: async () => { await deleteUser(u.id); await reloadUsers(); } }, 'Confirmar'), h('button', { class: 'link-btn', onclick: () => { confirmingUser = null; draw(); } }, 'Cancelar')]
+          : [h('button', { class: 'link-btn', onclick: () => { editingUser = u; confirmingUser = null; draw(); } }, 'Editar'),
+            u.fixed ? null : h('button', { class: 'link-btn link-btn--danger', onclick: () => { confirmingUser = u.id; draw(); } }, 'Eliminar')])]);
+      const usersBlock = () => !users ? block('Usuarios', 'usuarios', empty('No se pudo abrir el almacenamiento de este navegador, así que no es posible guardar usuarios aquí.'))
+        : block('Usuarios', 'usuarios',
+          editingUser ? userForm(editingUser) : h('div', null, h('button', { class: 'btn-primary', onclick: () => { editingUser = {}; confirmingUser = null; draw(); } }, 'Nuevo usuario')),
+          users.map(userRow),
+          h('div', { class: 'module__note' }, 'Por ahora es un directorio: aún no hay inicio de sesión, así que el rol todavía no limita lo que cada usuario puede ver o hacer.'));
+      // Branches: the starting ones can be edited (not removed); new ones are added here. Kept in this browser.
+      const YARDS = [['mty', 'Azul (como Monterrey)'], ['gdl', 'Verde azulado (como Guadalajara)'], ['mid', 'Naranja (como Mérida)']];
+      const cities = await getRouteCities();
+      let editingBranch = null, confirmingBranch = null; // editingBranch: the branch in the form ({} for a new one)
+      const refreshBranches = async () => { ({ branches, branch } = await reloadBranches()); editingBranch = null; confirmingBranch = null; draw(); };
+      const branchAddress = b => [b.street, b.neighborhood, [b.zip, b.city].filter(Boolean).join(' '), b.state].filter(Boolean).join(', ');
+      const branchForm = b => {
+        const error = h('div', { class: 'form__error', hidden: true }), fail = text => { error.textContent = text; error.hidden = false; };
+        const text = (name, attrs) => h('input', { class: 'input', name, value: b[name] || '', autocomplete: 'off', ...attrs });
+        const pick = (name, options, chosen, required) => h('select', { class: 'input', name, required }, options.map(([value, shown]) => h('option', { value, selected: value === chosen }, shown)));
+        const people = (users || []).filter(u => u.active !== false).map(u => [u.name, `${u.name} · ${u.role}`]);
+        const f = h('form', { class: 'userform', onsubmit: async e => {
+          e.preventDefault();
+          const d = new FormData(f), get = key => String(d.get(key) || '').trim();
+          const saved = { ...b, id: b.id || 'suc-' + newId(), name: get('name'), detail: get('detail'), city: get('city'), street: get('street'), neighborhood: get('neighborhood'), zip: get('zip'), state: get('state'),
+            phone: get('phone'), email: get('email'), manager: get('manager'), hours: get('hours'), theme: get('theme') };
+          if (branches.some(x => x.id !== saved.id && x.name.trim().toLowerCase() === saved.name.toLowerCase())) return fail(`Ya existe una sucursal llamada "${saved.name}".`);
+          try { await saveBranch(saved); } catch { return fail('No se pudo guardar. Revisa el espacio disponible del navegador e inténtalo de nuevo.'); }
+          await refreshBranches();
+        } },
+          h('div', { class: 'item__title' }, b.id ? `Editar sucursal · ${b.name}` : 'Nueva sucursal'),
+          h('div', { class: 'form__grid' },
+            label('Nombre de la sucursal', text('name', { placeholder: 'Querétaro, México', required: true }), 'span2'),
+            label('Descripción', text('detail', { placeholder: 'Centro de distribución Bajío' }), 'span2'),
+            label('Calle y número', text('street', { placeholder: 'Av. Industrial 100' }), 'span2'),
+            label('Colonia', text('neighborhood', { placeholder: 'Colonia o parque industrial' }), 'span2'),
+            label('Ciudad', [pick('city', [['', 'Selecciona…'], ...cities.map(c => [c, c]), ...(b.city && !cities.includes(b.city) ? [[b.city, b.city]] : [])], b.city || '', true),
+              h('span', { class: 'lbl__hint' }, 'De aquí salen las rutas de sus pedidos.')], 'span2'),
+            label('Estado', text('state', { placeholder: 'Nuevo León' })),
+            label('Código postal', text('zip', { placeholder: '64000', inputmode: 'numeric', maxlength: 5, pattern: '[0-9]{5}', title: '5 dígitos' })),
+            label('Teléfono', text('phone', { type: 'tel', placeholder: '81 0000 0000' }), 'span2'),
+            label('Correo', text('email', { type: 'email', placeholder: 'sucursal@empresa.mx' }), 'span2'),
+            label('Responsable', pick('manager', [['', 'Sin asignar'], ...people, ...(b.manager && !people.some(([name]) => name === b.manager) ? [[b.manager, b.manager]] : [])], b.manager || ''), 'span2'),
+            label('Horario', text('hours', { placeholder: 'Lun a Vie 8:00–18:00 · Sáb 8:00–13:00' }), 'span2'),
+            label('Apariencia del patio 3D', [pick('theme', YARDS, b.theme || 'mty'), h('span', { class: 'lbl__hint' }, 'Colores del patio en el panel cuando esta sucursal está en uso.')], 'span2')),
+          error,
+          h('div', { class: 'toolbar' }, h('button', { class: 'btn-primary', type: 'submit' }, 'Guardar'), h('button', { class: 'btn-small', type: 'button', onclick: () => { editingBranch = null; draw(); } }, 'Cancelar')));
+        return f;
+      };
+      const branchRow = b => setting(b.name, [b.detail, branchAddress(b), b.phone, b.manager ? `Responsable: ${b.manager}` : '', b.hours].filter(Boolean).join(' · ') || 'Sin datos registrados', [
+        branch && b.id === branch.id ? badge('En uso') : null,
+        ...(confirmingBranch === b.id
+          ? [h('button', { class: 'link-btn link-btn--danger', onclick: async () => { try { await deleteBranch(b.id); } catch {} await refreshBranches(); } }, 'Confirmar'), h('button', { class: 'link-btn', onclick: () => { confirmingBranch = null; draw(); } }, 'Cancelar')]
+          : [h('button', { class: 'link-btn', onclick: () => { editingBranch = b; confirmingBranch = null; draw(); } }, 'Editar'),
+            b.fixed ? null : h('button', { class: 'link-btn link-btn--danger', title: 'Sus pedidos y proveedores se conservan', onclick: () => { confirmingBranch = b.id; draw(); } }, 'Eliminar')])]);
+      const branchesBlock = () => block('Sucursales', 'sucursales',
+        editingBranch ? branchForm(editingBranch) : h('div', null, h('button', { class: 'btn-primary', onclick: () => { editingBranch = {}; confirmingBranch = null; draw(); } }, 'Nueva sucursal')),
+        (branches || []).map(branchRow),
+        h('div', { class: 'module__note' }, 'La sucursal en uso se cambia en la barra superior. Una sucursal nueva empieza sin cifras: sus reportes y su almacén se llenan cuando haya datos reales.'));
+      const TABS = [['general', 'General'], ['correo', 'Correo'], ['dashboard', 'Dashboard'], ['usuarios', 'Usuarios'], ['sucursales', 'Sucursales']];
+      let tab = 'general';
       const draw = () => {
         const speedLabel = h('span', null, config.animationSpeed.toFixed(1) + '×');
         const speed = h('input', { type: 'range', min: 0, max: 3, step: 0.1, value: config.animationSpeed, 'aria-label': 'Velocidad de animación', oninput: e => { config.animationSpeed = Number(e.target.value); speedLabel.textContent = config.animationSpeed.toFixed(1) + '×'; saveConfig(); } });
-        body.replaceChildren(h('div', { class: 'narrow' }, foldSection('Escena 3D', 'scene',
-          setting('Velocidad de animación', 'Qué tan rápido se mueven los vehículos. En 0 se detienen.', [speed, speedLabel]),
-          setting('Balanceo de cámara', 'Movimiento suave de la cámara cuando no se arrastra el mapa.', toggle('cameraSway')),
-          setting('Mostrar colisionadores', 'Dibuja el contorno de colisión de cada vehículo; en rojo cuando está bloqueado.', toggle('showColliders')),
-        ), h('div', null, h('button', { class: 'btn-small', onclick: () => { resetConfig(); draw(); } }, 'Restablecer valores de la escena')), mailTemplate()));
+        const [company, mail] = mailTemplate();
+        const blocks = {
+          general: () => block('General', 'general', setting('Nombre de la empresa', 'Con él se firman los correos de las órdenes de compra.', company)),
+          correo: () => [mailServer(), mail],
+          dashboard: () => block('Dashboard', 'dashboard',
+            setting('Velocidad de animación', 'Qué tan rápido se mueven los vehículos. En 0 se detienen.', [speed, speedLabel]),
+            setting('Balanceo de cámara', 'Movimiento suave de la cámara cuando no se arrastra el mapa.', toggle('cameraSway')),
+            setting('Mostrar colisionadores', 'Dibuja el contorno de colisión de cada vehículo; en rojo cuando está bloqueado.', toggle('showColliders')),
+            h('div', null, h('button', { class: 'btn-small', onclick: () => { resetConfig(); draw(); } }, 'Restablecer valores del dashboard'))),
+          usuarios: usersBlock,
+          sucursales: branchesBlock,
+        };
+        body.replaceChildren(h('div', { class: 'narrow' },
+          h('div', { class: 'chips', role: 'tablist' }, TABS.map(([id, name]) => h('button', { class: 'chipbtn' + (id === tab ? ' is-on' : ''), role: 'tab', 'aria-selected': String(id === tab), onclick: () => { tab = id; draw(); } }, name))),
+          blocks[tab]()));
       };
       draw();
     },

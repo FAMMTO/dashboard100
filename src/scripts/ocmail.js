@@ -61,6 +61,22 @@ export function fillTemplate(text, values) {
   }).filter(line => line !== null).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// ---- the account the e-mails will go out from (Configuración → Correo) ----
+// Kept for the backend that will send the mail: a browser can't talk to a mail server by itself, so until then
+// sendMail() below still opens the user's own mail program. The password is deliberately not part of this: it must
+// not be stored in the browser, where any script of the page could read it; it belongs on the server.
+export const DEFAULT_SERVER = { domain: '', fromEmail: '', fromName: '', replyTo: '', host: '', port: 587, security: 'starttls', user: '' };
+// How the connection is protected, and the port each one normally uses.
+export const SECURITY = [['starttls', 'STARTTLS', 587], ['ssl', 'SSL / TLS', 465], ['none', 'Sin cifrado', 25]];
+const SERVER_KEY = 'd100-mail-server';
+export function getMailServer() {
+  try { return { ...DEFAULT_SERVER, ...JSON.parse(localStorage.getItem(SERVER_KEY) || '{}') }; } catch { return { ...DEFAULT_SERVER }; }
+}
+export function saveMailServer(server) {
+  const { password, ...kept } = server; // never the password
+  try { localStorage.setItem(SERVER_KEY, JSON.stringify(kept)); } catch {}
+}
+
 export const isEmail = text => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(text || '').trim());
 
 /** Hands a message to the user's mail program, ready to be sent. */

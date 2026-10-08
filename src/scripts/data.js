@@ -61,10 +61,39 @@ const BRANCHES = [
 /** Profit of an order: what it sold for minus what it cost us. */
 export const orderProfit = s => s.sale - s.cost;
 
+// Branches are kept in this browser's IndexedDB (store 'branches'), so they can be edited and new ones added in
+// Configuración. The three above are the starting ones: only they have figures (kpis, reports, warehouse) and a
+// yard of their own in the 3D scene. A branch added by the user has none yet (`hasData: false`) and borrows the look
+// of one of them (`theme`).
+// Branch: { id, name, city (one of getRouteCities(): where its routes start), detail, street, neighborhood, zip, state,
+//           phone, email, manager, hours, theme: 'mty' | 'gdl' | 'mid', fixed?: true, hasData, kpis }
+const NO_KPIS = { shipments: 0, onTime: 0, hours: 0, sales: 0, profit: 0 };
+// Sales and profit of each branch's dashboard card are those of its report (last 7 days), so both always agree.
+const withFigures = b => {
+  const base = BRANCHES.find(x => x.id === b.id), r = REPORTS[b.id];
+  if (!base || !r) return { ...b, hasData: false, kpis: { ...NO_KPIS } };
+  const sales = r.sales.reduce((a, v) => a + v, 0);
+  return { ...b, hasData: true, kpis: { ...base.kpis, sales, profit: sales - r.cost } };
+};
+
 /** Branches for the picker in the top bar; the first one is the default. */
 export async function getBranches() {
-  // Sales and profit of each branch's dashboard card are those of its report (last 7 days), so both always agree.
-  return BRANCHES.map(b => { const r = REPORTS[b.id], sales = r.sales.reduce((a, v) => a + v, 0); return { ...b, kpis: { ...b.kpis, sales, profit: sales - r.cost } }; });
+  const starting = BRANCHES.map(({ kpis, ...b }) => ({ ...b, theme: b.id, fixed: true }));
+  let rows;
+  try { await seedOnce('branches', starting); rows = await inStore('readonly', store => store.getAll(), 'branches'); } catch { rows = starting; }
+  if (!rows.length) rows = starting; // the storage can't be used: the starting ones still work
+  const order = id => { const at = BRANCHES.findIndex(b => b.id === id); return at < 0 ? BRANCHES.length : at; };
+  return rows.sort((a, b) => order(a.id) - order(b.id) || a.name.localeCompare(b.name, 'es')).map(withFigures);
+}
+
+/** Creates the branch, or replaces the one with the same id. */
+export async function saveBranch(branch) {
+  const { kpis, hasData, ...kept } = branch; // figures are worked out, not saved
+  await inStore('readwrite', store => store.put(kept), 'branches');
+}
+
+export async function deleteBranch(id) {
+  await inStore('readwrite', store => store.delete(id), 'branches');
 }
 
 /** Shipments for the "Envíos recientes" table. */
@@ -320,6 +349,14 @@ const REPORTS = {
 const sum = list => list.reduce((a, v) => a + v, 0);
 const round1 = v => Math.round(v * 10) / 10;
 
+// What a branch's orders cost on each day. Only the week's total is on record (`cost`), so it is shared out by
+// each day's sales with a small fixed variation: the margin changes a little from day to day, and the days still
+// add up to the total. Replace with the real cost per day.
+function dailyCost(r, seed) {
+  const weights = r.sales.map((v, i) => v * (1 + (Math.sin((seed + i) * 2.3) * 0.5) * 0.14)), all = weights.reduce((a, v) => a + v, 0);
+  let left = r.cost;
+  return weights.map((w, i) => { const cost = i === weights.length - 1 ? left : Math.round(r.cost * w / all / 1000) * 1000; left -= cost; return cost; });
+}
 /**
  * Figures for the last 7 days. `scope` is a branch id, or 'general' for every branch added together.
  * `branches` always lists each branch's sales and shipments, to compare them.
@@ -331,9 +368,10 @@ export async function getReports(scope = 'general') {
   const weighted = value => { let total = 0, weight = 0; picked.forEach(r => r.shipments.forEach((n, i) => { total += value(r, i) * n; weight += n; })); return total / weight; };
   const merged = key => { const out = {}; picked.forEach(r => Object.entries(r[key]).forEach(([name, v]) => { out[name] = (out[name] || 0) + v * (key === 'status' ? sum(r.shipments) : 1); })); return out; };
   const shipments = perDay('shipments'), sales = perDay('sales'), cost = sum(picked.map(r => r.cost)), statusTotal = sum(shipments);
+  const costs = picked.map(r => dailyCost(r, Object.values(REPORTS).indexOf(r) * 7)), profit = sales.map((v, i) => v - sum(costs.map(c => c[i]))); // per day; adds up to totals.profit
   return {
     totals: { shipments: sum(shipments), onTime: round1(weighted((r, i) => r.onTime[i])), processingHours: round1(weighted(r => r.processingHours)), incidents: sum(picked.map(r => r.incidents)), sales: sum(sales), cost, profit: sum(sales) - cost },
-    days: REPORT_DAYS, shipments, sales,
+    days: REPORT_DAYS, shipments, sales, profit,
     onTime: REPORT_DAYS.map((_, i) => round1(sum(picked.map(r => r.onTime[i] * r.shipments[i])) / shipments[i])),
     status: Object.entries(merged('status')).map(([name, v]) => ({ name, value: Math.round(v / statusTotal) })),
     destinations: Object.entries(merged('destinations')).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 6),
@@ -400,8 +438,8 @@ export async function getAlerts() {
 // Records are kept in this browser's IndexedDB until there is a real database: movements (with their receipts),
 // clients and the catalogue of materials. Each has its own store; replace the functions below with API calls.
 const openDb = () => new Promise((resolve, reject) => {
-  const req = indexedDB.open('DASH100', 4); // v2 added the clients store, v3 the materials one, v4 the suppliers one
-  req.onupgradeneeded = () => { for (const name of ['movements', 'clients', 'materials', 'suppliers']) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name, { keyPath: 'id' }); };
+  const req = indexedDB.open('DASH100', 6); // v2 added the clients store, v3 the materials one, v4 the suppliers one, v5 the users one, v6 the branches one
+  req.onupgradeneeded = () => { for (const name of ['movements', 'clients', 'materials', 'suppliers', 'users', 'branches']) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name, { keyPath: 'id' }); };
   req.onsuccess = () => resolve(req.result);
   req.onerror = () => reject(req.error);
 });
@@ -500,6 +538,29 @@ export async function deleteSupplier(id) {
   await inStore('readwrite', store => store.delete(id), 'suppliers');
 }
 
+// ---- users: the people of the company and the role each one has ----
+// User: { id, name, role (one of USER_ROLES), email, phone, branchId (a branch id, or '' for every branch), active, fixed?: true }
+// For now it is only a directory: there is no login yet, so a role does not limit what its user can see or do.
+export const USER_ROLES = ['Administración', 'Gerente de operaciones', 'Jefe de operaciones', 'Ventas', 'Sistemas', 'Chofer', 'Montacarguista'];
+const STARTING_USERS = [
+  { id: 'usr-0001', name: 'Alex Chen', role: 'Gerente de operaciones', email: '', phone: '', branchId: '', active: true, fixed: true },
+];
+
+/** Every user, by name. */
+export async function getUsers() {
+  await seedOnce('users', STARTING_USERS);
+  return (await inStore('readonly', store => store.getAll(), 'users')).sort(byName);
+}
+
+/** Creates the user, or replaces the one with the same id. */
+export async function saveUser(user) {
+  await inStore('readwrite', store => store.put(user), 'users');
+}
+
+export async function deleteUser(id) {
+  await inStore('readwrite', store => store.delete(id), 'users');
+}
+
 /** Every arrival and sale, newest first. */
 export async function getMovements() {
   const rows = await inStore('readonly', store => store.getAll());
@@ -513,4 +574,86 @@ export async function saveMovement(record) {
 
 export async function deleteMovement(id) {
   await inStore('readwrite', store => store.delete(id));
+}
+
+// ---- messages: the e-mails that go with the orders (the "Mensajes" page) ----
+// Thread: { id, kind: 'oc' | 'proveedor' | 'cliente', subject, party, folio?, orderId?, approved: { at } | null,
+//           messages: [{ dir: 'out' | 'in', who, at (ISO date), text }] }
+// What was sent is real: the mail of each purchase order (OC). What arrives is not yet, because there is no
+// mailbox connected: every OC sent gets a mock answer from its supplier, and INBOX holds a few loose messages.
+// Replace getMessages() with a call to the backend that reads the mailbox (same shape).
+const INBOX = [
+  { id: 'in-0001', kind: 'cliente', subject: 'Fecha de entrega de nuestro pedido', party: 'Grupo Comercial del Norte', approved: null,
+    messages: [{ dir: 'in', who: 'compras@gcnorte.mx', at: '2026-10-06T16:20:00', text: 'Buenas tardes. ¿Nos pueden confirmar qué día llega el acero que pedimos? Necesitamos programar la descarga en nuestro almacén de Saltillo.\n\nGracias,\nLaura Treviño' }] },
+  { id: 'in-0002', kind: 'proveedor', subject: 'Actualización de precios de octubre', party: 'Metales Monterrey', approved: null,
+    messages: [{ dir: 'in', who: 'compras@metalesmty.mx', at: '2026-10-05T09:05:00', text: 'Estimados clientes: a partir del 15 de octubre el aluminio sube 2% por tonelada. El acero y el cobre mantienen su precio.\n\nSaludos,\nDaniela Cavazos' }] },
+];
+const REPLY_AFTER_MS = 2 * 3600 * 1000;
+
+/** Every conversation, the one with the latest message first. */
+export async function getMessages() {
+  const orders = (await getMovements()).filter(r => r.type === 'entrada' && r.mail);
+  const threads = orders.map(r => ({
+    id: 'oc-' + r.id, kind: 'oc', orderId: r.id, folio: r.folio, party: r.party, subject: r.mail.subject, approved: r.approved || null,
+    messages: [
+      { dir: 'out', who: r.mail.to, at: r.mail.sentAt, text: r.mail.body || 'Mensaje enviado desde tu programa de correo (no se guardó una copia del texto).' },
+      { dir: 'in', who: r.mail.to, at: new Date(new Date(r.mail.sentAt).getTime() + REPLY_AFTER_MS).toISOString(),
+        text: `Buen día. Confirmamos disponibilidad de ${r.quantity.toLocaleString('es-MX')} ${r.unit} de ${r.material} al precio acordado. Podemos entregar en 3 días hábiles.\n\nQuedamos atentos a su aprobación para programar el envío.\n\n${r.party}` },
+    ],
+  }));
+  const latest = t => t.messages[t.messages.length - 1].at;
+  return [...threads, ...INBOX].sort((a, b) => latest(b).localeCompare(latest(a)));
+}
+
+/** Files a purchase order's follow-up as "Solicitud aprobada" (the order then counts as bought), or takes that back. */
+export async function setOrderApproved(id, on) {
+  const record = (await getMovements()).find(r => r.id === id);
+  if (!record) throw new Error('Orden desconocida: ' + id);
+  await saveMovement({ ...record, approved: on ? { at: new Date().toISOString() } : null });
+}
+
+// ---- purchases: how much material is being bought (the "Compras" section of Reportes) ----
+// Worked out from the purchase orders (OC) saved in this browser (see getMovements): the ones dated in the last
+// 7 days. An order belongs to the branch it was made in (`branchId`); orders saved before that was recorded have
+// none and are counted in every branch.
+const PURCHASE_DAYS = 7;
+const isoDay = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/**
+ * What was asked of suppliers in the last 7 days. `scope` is a branch id, or 'general' for every branch.
+ * @returns {Promise<{ totals: { tons, amount, orders, approved }, materials: { name, tons, others: string[], amount }[] }>}
+ *   tons: what was bought by weight (kg and tonnes); others: quantities in units that are not a weight ("12 piezas");
+ *   approved: the orders filed as "Solicitud aprobada" in Mensajes. materials: the one most was spent on first.
+ */
+export async function getPurchases(scope = 'general') {
+  const since = new Date(); since.setDate(since.getDate() - (PURCHASE_DAYS - 1));
+  const from = isoDay(since), to = isoDay(new Date());
+  const orders = (await getMovements()).filter(r => r.type === 'entrada' && r.date >= from && r.date <= to && (scope === 'general' || !r.branchId || r.branchId === scope));
+  const byName = new Map();
+  for (const r of orders) {
+    if (!byName.has(r.material)) byName.set(r.material, { name: r.material, tons: 0, units: {}, amount: 0 });
+    const m = byName.get(r.material);
+    if (r.unit === 'toneladas') m.tons += r.quantity; else if (r.unit === 'kg') m.tons += r.quantity / 1000; else m.units[r.unit] = (m.units[r.unit] || 0) + r.quantity;
+    m.amount += r.quantity * r.unitPrice;
+  }
+  const materials = [...byName.values()].map(({ units, ...m }) => ({ ...m, others: Object.entries(units).map(([unit, n]) => `${n.toLocaleString('es-MX')} ${unit}`) })).sort((a, b) => b.amount - a.amount);
+  return { totals: { tons: sum(materials.map(m => m.tons)), amount: sum(materials.map(m => m.amount)), orders: orders.length, approved: orders.filter(r => r.approved).length }, materials };
+}
+
+// ---- inventory: how much of each product of the catalogue a branch has (the "Almacén" page) ----
+// Worked out from the movements saved in this browser: what came in with the purchase orders (OC) of the branch
+// minus what left in its sales. Only weights count (kg and tonnes). Movements saved before their branch was
+// recorded have none and are counted in every branch.
+const inTonnes = r => r.unit === 'toneladas' ? r.quantity : r.unit === 'kg' ? r.quantity / 1000 : 0;
+
+/**
+ * Stock of every product of the catalogue in a branch (its id; every branch together if there is none).
+ * @returns {Promise<{ name, bought, sold, stock }[]>} in tonnes; the product with most stock first
+ */
+export async function getInventory(branchId) {
+  const [catalog, moves] = await Promise.all([getCatalog(), getMovements()]);
+  const mine = moves.filter(r => !branchId || !r.branchId || r.branchId === branchId);
+  const total = (name, type) => mine.filter(r => r.type === type && r.material === name).reduce((a, r) => a + inTonnes(r), 0);
+  return catalog.map(m => { const bought = total(m.name, 'entrada'), sold = total(m.name, 'salida'); return { name: m.name, bought, sold, stock: bought - sold }; })
+    .sort((a, b) => b.stock - a.stock || a.name.localeCompare(b.name, 'es'));
 }

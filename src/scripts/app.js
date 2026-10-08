@@ -39,7 +39,7 @@ function animateKpis(kpis) {
     $('k2').textContent = (kpis.onTime * ek).toFixed(1) + '%';
     $('k3').textContent = (kpis.hours * ek).toFixed(1) + ' h';
     $('k4').textContent = compactPesos(kpis.sales * ek);
-    $('k4-profit').textContent = `Profit ${compactPesos(kpis.profit * ek)} · ${(kpis.profit / kpis.sales * 100).toFixed(1)}%`;
+    $('k4-profit').textContent = `Profit ${compactPesos(kpis.profit * ek)}` + (kpis.sales ? ` · ${(kpis.profit / kpis.sales * 100).toFixed(1)}%` : ''); // a new branch has no sales yet
     if (k < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -58,12 +58,14 @@ function setBranch(b) {
     item.classList.toggle('is-active', on); item.setAttribute('aria-selected', String(on));
   });
   animateKpis(b.kpis);
-  if (scene) scene.setBranch(b.id, b.city);
+  if (scene) scene.setBranch(b.theme || b.id, b.city);
 }
 
+// Fills the picker with a list of branches and keeps the one in use selected (set by initBranches; also called
+// when the branches are edited in Configuración).
+let fillBranches = () => {};
 function initBranches(branches) {
   const btn = $('branch'), menu = $('branch-menu');
-  branchList = branches;
   const toggle = open => {
     menu.hidden = !open;
     btn.setAttribute('aria-expanded', String(open));
@@ -72,14 +74,18 @@ function initBranches(branches) {
     menu.style.top = r.bottom + 8 + 'px';
     menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
   };
-  menu.replaceChildren(...branches.map(b => h('button', { class: 'menu__item', role: 'option', dataset: { branch: b.id }, onclick: () => { toggle(false); if (b !== branch) setBranch(b); btn.focus(); } },
+  fillBranches = list => {
+    branchList = list;
+    menu.replaceChildren(...list.map(b => h('button', { class: 'menu__item', role: 'option', dataset: { branch: b.id }, onclick: () => { toggle(false); if (b !== branch) setBranch(b); btn.focus(); } },
     h('div', { class: 'chip__text' }, h('div', { class: 'chip__title' }, b.name), h('div', { class: 'chip__sub' }, b.detail)),
     h('span', { class: 'menu__check' }, '✓'))));
+    setBranch(list.find(b => b.id === (branch ? branch.id : store.get('wt-branch'))) || list[0]);
+  };
   btn.addEventListener('click', () => toggle(menu.hidden));
   document.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) toggle(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) { toggle(false); btn.focus(); } });
   window.addEventListener('resize', () => toggle(false));
-  setBranch(branches.find(b => b.id === store.get('wt-branch')) || branches[0]);
+  fillBranches(branches);
 }
 
 const ROW_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3d4a60" stroke-width="2"><path d="M12 2l9 5v10l-9 5-9-5V7z"></path></svg>';
@@ -212,13 +218,15 @@ async function showView() {
   }
   lastView = view;
 
-  const m = modules[view], actions = h('div'), body = h('div', { class: 'module__body' }, h('div', { class: 'module__note' }, 'Cargando…'));
+  const m = modules[view], actions = h('div', { class: 'module__actions' }), body = h('div', { class: 'module__body' }, h('div', { class: 'module__note' }, 'Cargando…'));
   mod.replaceChildren(h('div', { class: 'module__head' }, h('div', null, h('div', { class: 'module__title' }, m.title), h('div', { class: 'module__sub' }, m.sub)), actions), body);
   const fleet = await fleetReady;
   if (token !== viewToken) return; // the user moved to another view while loading
   // A page that fails to load says so, instead of staying on "Cargando…" forever.
   try { await m.render({
-    body, actions, fleet, branches: branchList, branch, state: moduleState, mark: markSelected, tip: showTip, alerts,
+    body, actions, fleet, branches: branchList, branch,
+    reloadBranches: async () => { fillBranches(await getBranches()); return { branches: branchList, branch }; }, // after editing them
+    state: moduleState, mark: markSelected, tip: showTip, alerts,
     select: id => selectVehicle(vehicleById(id), true),
     flyTo: (x, z, zoom) => scene.flyTo(x, z, zoom),
     alertsChanged: updateAlertBadges,
@@ -271,7 +279,7 @@ function initAlertsModal() {
 function initScene() {
   scene = createDASH100Scene($('scene'), Object.assign(config, { onSelect: selectVehicle }));
   scene.select(selected.id);
-  if (branch) scene.setBranch(branch.id, branch.city);
+  if (branch) scene.setBranch(branch.theme || branch.id, branch.city);
   if (tagArgs) scene.setLabel(...tagArgs);
   $('zoom-in').addEventListener('click', () => scene.zoomBy(1.25));
   $('zoom-out').addEventListener('click', () => scene.zoomBy(0.8));

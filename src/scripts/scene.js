@@ -204,8 +204,30 @@ export function createDASH100Scene(el, opts = {}) {
   const laneW = p => ({ x: L / 2 - mod(p), z: -19, r: 0 });
   const laneS = p => ({ x: 40, z: mod(p) - L / 2, r: Math.PI / 2 });
   const laneN = p => ({ x: 44, z: L / 2 - mod(p), r: -Math.PI / 2 });
-  [[laneE, 0, 7], [laneE, 75, 8.5], [laneE, 150, 6.2], [laneW, 30, 6], [laneW, 120, 7.5], [laneW, 190, 6.8]].forEach(([fn, p, s]) => addV(makeTruck(), fn, Object.assign({ p, spd: s, look: 3, prio: 3 }, TRUCK)));
-  [[laneS, 10, 6], [laneS, 120, 5.5], [laneN, 60, 6.5], [laneN, 170, 6]].forEach(([fn, p, s]) => addV(makeTruck(), fn, Object.assign({ p, spd: s, look: 3, prio: 2 }, TRUCK)));
+  // ---- traffic lights at the crossing of the two roads ----
+  // One light per lane, on the corner to its right, and a stop line a little before the crossing (before the zebra
+  // on the vertical road). The two of the main road show the same thing, and so do the two of the vertical one.
+  // `gap(v)`: how far the front of a truck (NOSE ahead of its position) still is from its stop line.
+  const NOSE = 7.3, STOP = { e: 36.3, w: 47.7, s: -26.6, n: -7.4 };
+  const gapE = v => STOP.e - (v.x + NOSE), gapW = v => (v.x - NOSE) - STOP.w, gapS = v => STOP.s - (v.z + NOSE), gapN = v => (v.z - NOSE) - STOP.n;
+  box(0.4, 0.07, 4.2, M(0xffffff), STOP.e, 0, -14.7); box(0.4, 0.07, 4.2, M(0xffffff), STOP.w, 0, -19.3);
+  box(4.2, 0.07, 0.4, M(0xffffff), 39.7, 0, STOP.s); box(4.2, 0.07, 0.4, M(0xffffff), 44.3, 0, STOP.n);
+  const LAMPS = [['red', 0xef4444], ['yellow', 0xf3b52a], ['green', 0x18a957]];
+  const lampSet = () => Object.fromEntries(LAMPS.map(([name, c]) => [name, new T.MeshStandardMaterial({ color: 0x2a3242, emissive: c, emissiveIntensity: 0, roughness: 0.4 })]));
+  const lights = { ew: lampSet(), ns: lampSet() };
+  const lightPole = (x, z, axis) => {
+    cyl(0.13, 4.6, M(0x2a3242), x, 0, z, null, 10); box(0.44, 1.62, 0.44, M(DARK), x, 4.5, z);
+    LAMPS.forEach(([name], i) => box(0.54, 0.36, 0.54, lights[axis][name], x, 5.6 - i * 0.5, z)); // bands, so they read from any side
+  };
+  lightPole(36.6, -11.6, 'ew'); lightPole(47.4, -22.4, 'ew'); lightPole(36.6, -22.4, 'ns'); lightPole(47.4, -11.6, 'ns');
+  // The cycle: who has green and for how long (seconds). 'all': every light red while the crossing empties.
+  const CYCLE = [['ew', 'green', 9], ['ew', 'yellow', 2], ['all', 'red', 3], ['ns', 'green', 7], ['ns', 'yellow', 2], ['all', 'red', 3]], CYCLE_S = CYCLE.reduce((a, c) => a + c[2], 0);
+  let sigT = 0;
+  const phase = () => { let left = sigT % CYCLE_S; return CYCLE.find(c => (left -= c[2]) < 0); };
+  const lampOf = axis => { const [who, lamp] = phase(); return who === axis ? lamp : 'red'; }; // what an axis shows right now
+
+  [[laneE, 0, 7, gapE], [laneE, 75, 8.5, gapE], [laneE, 150, 6.2, gapE], [laneW, 30, 6, gapW], [laneW, 120, 7.5, gapW], [laneW, 190, 6.8, gapW]].forEach(([fn, p, s, gap]) => addV(makeTruck(), fn, Object.assign({ p, spd: s, look: 3, prio: 3, axis: 'ew', gap }, TRUCK)));
+  [[laneS, 10, 6, gapS], [laneS, 120, 5.5, gapS], [laneN, 60, 6.5, gapN], [laneN, 170, 6, gapN]].forEach(([fn, p, s, gap]) => addV(makeTruck(), fn, Object.assign({ p, spd: s, look: 3, prio: 2, axis: 'ns', gap }, TRUCK)));
 
   const ease = x => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
   const yardTruck = addV(makeTruck(), p => { const ph = (p * 0.06) % 1; let e; if (ph < 0.35) e = ease(ph / 0.35); else if (ph < 0.6) e = 1; else if (ph < 0.95) e = 1 - ease((ph - 0.6) / 0.35); else e = 0; return { x: -14 + e * 20.5, z: 10, r: 0 }; }, Object.assign({ look: 0.35, prio: 2 }, TRUCK));
@@ -249,16 +271,19 @@ export function createDASH100Scene(el, opts = {}) {
 
   const angd = (a, b) => ((a - b + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
   const stepV = dt => {
+    sigT += dt;
     V.forEach(v => {
       v.nb = null; if (v.stat || dt <= 0) return;
+      // Without green a truck waits at its stop line; one that already passed it keeps going and clears the crossing.
+      if (v.gap) { const g = v.gap(v); v.hold = lampOf(v.axis) !== 'green' && g <= 2.2 && g > -1.5; }
       const s = v.path(v.p + v.dir * (dt * v.spd + v.look)), C = rect(s.x, s.z, s.r + (v.dir < 0 ? Math.PI : 0), v, 0.2), cur = vr(v);
       for (const o of V) { if (o === v) continue; const O = vr(o); if (!hit(C, O)) continue; const dc = Math.hypot(C.c[0] - O.c[0], C.c[1] - O.c[1]), d0 = Math.hypot(cur.c[0] - O.c[0], cur.c[1] - O.c[1]); if (dc < d0 - 1e-3) { v.nb = o; break; } }
     });
     V.forEach((v, i) => {
       if (v.stat) return;
-      const o = v.nb, full = dt * v.spd;
+      const o = v.nb, stop = o || v.hold, full = dt * v.spd;
       // sf eases the speed instead of stopping dead: brake quickly when blocked, pull away gently when clear
-      v.sf += ((o ? 0 : 1) - v.sf) * (1 - Math.exp(-dt * (o ? 9 : 2.5)));
+      v.sf += ((stop ? 0 : 1) - v.sf) * (1 - Math.exp(-dt * (stop ? 9 : 2.5)));
       v.p += full * v.sf * v.dir;
       if (!o) v.bt = 0;
       else if ((v.bt += dt) > 1.2 && v.canTurn) { v.dir *= -1; v.bt = 0; }
@@ -334,11 +359,12 @@ export function createDASH100Scene(el, opts = {}) {
     const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now;
     const sp = opts.animationSpeed ?? 1, sdt = dt * sp; t += sdt;
     stepV(sdt);
+    for (const axis in lights) { const on = lampOf(axis); for (const name in lights[axis]) lights[axis][name].emissiveIntensity = name === on ? 1.6 : 0; }
     const showC = opts.showColliders ?? false;
     V.forEach(v => {
       v.vr += angd(v.r, v.vr) * smooth(sdt, 5);
       v.obj.position.set(v.x, 0, v.z); v.obj.rotation.y = v.vr;
-      const lm = v.obj.userData.light, blocked = !!v.nb;
+      const lm = v.obj.userData.light, blocked = !!v.nb || !!v.hold;
       if (v.obj.userData.lift) { lm.color.setHex(blocked ? 0xef4444 : 0xffa31a); lm.emissive.setHex(blocked ? 0xff2020 : 0xff8a00); lm.emissiveIntensity = blocked ? 1.2 : 0.4 + 0.4 * Math.sin(t * 6); }
       else lm.emissiveIntensity = blocked ? 1.6 : 0;
       v.line.visible = showC;

@@ -17,17 +17,21 @@ export const badge = status => h('span', { class: 'badge', dataset: { status } }
 export const card = (...kids) => h('div', { class: 'card section' }, ...kids);
 export const section = (title, ...kids) => h('div', { class: 'card section' }, h('div', { class: 'section__title' }, title), ...kids);
 const CHEVRON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>';
-/** A section that folds: clicking its title hides or shows its contents. `key` remembers the choice in this browser. */
-export const foldSection = (title, key, ...kids) => {
+// A section that folds: clicking its title hides or shows its contents. `key` remembers the choice in this browser;
+// `startOpen` is how it shows until the user chooses.
+const fold = startOpen => (title, key, ...kids) => {
   const saved = 'd100-fold-' + key, body = h('div', { class: 'fold__body' }, ...kids);
-  let open = true;
-  try { open = localStorage.getItem(saved) !== 'closed'; } catch {}
+  let open = startOpen;
+  try { const was = localStorage.getItem(saved); if (was) open = was === 'open'; } catch {}
   const head = h('button', { class: 'fold__head', type: 'button', onclick: () => { open = !open; show(); try { localStorage.setItem(saved, open ? 'open' : 'closed'); } catch {} } },
     h('span', { class: 'section__title' }, title), h('span', { class: 'fold__chevron', html: CHEVRON }));
   const show = () => { body.hidden = !open; head.setAttribute('aria-expanded', String(open)); head.title = open ? 'Contraer' : 'Expandir'; };
   show();
   return h('div', { class: 'card section fold' }, head, body);
 };
+export const foldSection = fold(true);
+/** The same, but folded until the user opens it. */
+export const foldedSection = fold(false);
 export const stats = pairs => h('div', { class: 'stats' }, pairs.map(([value, label]) => h('div', { class: 'stat' }, h('div', { class: 'stat__value' }, String(value)), h('div', { class: 'stat__label' }, label))));
 export const empty = text => h('div', { class: 'module__note' }, text);
 // Whole pesos, for order figures (sale, cost, profit).
